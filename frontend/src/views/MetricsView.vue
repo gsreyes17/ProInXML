@@ -181,9 +181,7 @@ const labels = {
           }}</strong
           ><span class="stat-caption"
             >{{ number(Number(result.resumen.FilasInsertadas)) }} insertadas ·
-            {{
-              number(Number(result.resumen.FilasReutilizadas))
-            }}
+            {{ number(Number(result.resumen.FilasReutilizadas)) }}
             reutilizadas</span
           >
         </div>

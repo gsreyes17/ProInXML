@@ -29,7 +29,7 @@ Los grupos y colores utilizan la sintaxis [TableGroup de DBML](https://dbml.dbdi
 - `integracion.Documento` conserva la respuesta original comprimida. `datos.Gasto` contiene sus Items tipados; `modelo.Gasto` utiliza la misma identidad del detalle y lo relaciona con las entidades normalizadas.
 - `Consulta.DocumentoActualId` referencia un documento de esa misma consulta mediante una FK compuesta. No es una relación simple que permita publicar un documento de otra URL.
 - `Meta.UnidadMedidaId` admite NULL. No se crea una unidad ficticia para representar la ausencia de valor.
-- `auditoria.CargaDocumento.DocumentoId` y `LoteId` son referencias históricas **sin FK** desde la migración 005: la auditoría debe sobrevivir a la limpieza. Por ello no se dibujan líneas que simulen restricciones inexistentes. La FK de usuario permanece.
+- `auditoria.CargaDocumento.DocumentoId` y `LoteId` son referencias históricas **sin FK** en el esquema final: la auditoría debe sobrevivir a la limpieza. Por ello no se dibujan líneas que simulen restricciones inexistentes. La FK de usuario permanece.
 - `auditoria.Cambio.RegistroId` es un identificador asociado a `Tabla`; no es una FK a una única tabla. El valor 0 representa el evento de vaciado global cuando `Tabla=integracion.Documento`.
 - `analisis.MetricaIntento` conserva identificadores históricos de intento, trabajo, lote y documento sin FK. Los datos de análisis sobreviven al vaciado del laboratorio para comparar ensayos; no se dibujan relaciones físicas inexistentes.
 
@@ -42,7 +42,7 @@ Las sesiones actuales de FastAPI están en memoria y no tienen una tabla física
 Con la conexión habitual configurada en `.env` y la base actualizada:
 
 ```powershell
-.\uv.cmd run --frozen python scripts/exportar_dbdiagram.py
+.\uv.cmd run --frozen python scripts/desarrollo/exportar_dbdiagram.py
 ```
 
 El script consulta exclusivamente metadatos y escribe el TXT; no modifica la base. Para representar la base de validación, configura temporalmente `MSSQL_DATABASE=ProInXML_Validacion`. La sintaxis de tablas y referencias sigue la [documentación oficial de DBML](https://dbml.dbdiagram.io/docs/).

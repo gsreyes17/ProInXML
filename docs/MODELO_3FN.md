@@ -95,9 +95,7 @@ sin tomarlos de las columnas del registro original. Se compararon los 23.091
 registros existentes, incluida su identidad: cero diferencias. La prueba de
 integracion tambien verifica reconstruccion e idempotencia con la fixture.
 
-`sql/003_modelo.sql` crea el esquema, restricciones, procedimiento y vista.
-`scripts/backfill_plan.py` completa el modelo de documentos existentes cuando falta, con una
-transaccion por documento y sin volver a consultar el MEF.
+`sql/002_modelo.sql` crea las entidades y restricciones; `sql/003_normalizacion.sql` instala el normalizador y la vista de reconstrucción. Ambos se generan desde el contrato Python.
 
 `Unidad_Medida` es opcional: `Meta.UnidadMedidaId` acepta NULL, su clave natural
 incluye ese valor y la comparación tolera nulos. Se usa LEFT JOIN al reconstruir;

@@ -1,3 +1,4 @@
+-- Historial de tiempos por intento. Se conserva al limpiar las cargas.
 USE ProInXML;
 GO
 SET NOCOUNT ON;

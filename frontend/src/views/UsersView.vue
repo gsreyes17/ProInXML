@@ -106,11 +106,10 @@ async function save() {
           <option>Administrador</option>
         </select></label
       ><label class="checkbox-label"
-        >Cuenta activa<input
-          id="user-active"
-          v-model="form.activo"
-          type="checkbox"
-      /></label>
+        ><input id="user-active" v-model="form.activo" type="checkbox" /><span
+          >Cuenta activa</span
+        ></label
+      >
     </div>
     <div class="filter-actions">
       <button class="button button-outline" type="button" @click="reset">

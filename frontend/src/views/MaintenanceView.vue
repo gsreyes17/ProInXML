@@ -131,8 +131,8 @@ async function remove() {
         <h2>Limpieza del laboratorio</h2>
         <p>
           Elimina un documento o vacía todas las cargas para repetir las
-          pruebas. Se conservan usuarios, roles, configuración, métricas y toda la
-          auditoría.
+          pruebas. Se conservan usuarios, roles, configuración, métricas y toda
+          la auditoría.
         </p>
         <p class="subtle">
           La eliminación es definitiva. El sistema no permite limpiar mientras

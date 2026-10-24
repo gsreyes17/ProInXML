@@ -1,7 +1,9 @@
+-- Cola, vistas operativas, auditoria inmutable y permisos de aplicacion.
 USE ProInXML;
 GO
 SET NOCOUNT ON;
 GO
+-- Consultas de datos vigentes y trazabilidad de intentos.
 CREATE OR ALTER VIEW datos.GastoActual AS
 SELECT g.* FROM datos.Gasto g JOIN integracion.Consulta c ON c.DocumentoActualId=g.DocumentoId;
 GO
@@ -22,6 +24,7 @@ SELECT a.Id,a.TrabajoId,t.LoteId,t.ConsultaId,a.Numero,a.Estado,a.Etapa,a.HttpSt
  a.RegistrosRechazados,a.Observaciones,a.CreadoUtc FROM integracion.Intento a
  JOIN integracion.Trabajo t ON t.Id=a.TrabajoId;
 GO
+-- Toma atomica de trabajos y recuperacion de leases vencidos.
 CREATE OR ALTER PROCEDURE integracion.TomarTrabajo @LoteId bigint=NULL AS
 BEGIN
  SET NOCOUNT ON;
@@ -90,6 +93,7 @@ GO
 CREATE OR ALTER TRIGGER seguridad.tr_Acceso_Inmutable ON seguridad.EventoAcceso INSTEAD OF UPDATE,DELETE AS
 BEGIN THROW 50002,'Los eventos de acceso no admiten cambios ni eliminaciones.',1; END;
 GO
+-- Permisos de la cuenta de aplicacion; las bitacoras son inmutables.
 GRANT SELECT,INSERT,UPDATE,DELETE ON SCHEMA::integracion TO proinxml_app;
 GRANT SELECT,INSERT,UPDATE,DELETE ON SCHEMA::datos TO proinxml_app;
 GRANT SELECT,INSERT,UPDATE,DELETE ON SCHEMA::modelo TO proinxml_app;
@@ -107,25 +111,4 @@ DENY ALTER ON SCHEMA::modelo TO proinxml_app;
 DENY ALTER ON SCHEMA::seguridad TO proinxml_app;
 DENY ALTER ON SCHEMA::auditoria TO proinxml_app;
 GRANT EXECUTE ON integracion.TomarTrabajo TO proinxml_app;
-GO
--- TODO: pausar/reanudar lotes, pendiente por decision del usuario; no se agrega Pausado.
--- Asignar nombres legibles a las FK automaticas conservadas desde la instalacion anterior.
-DECLARE @schema sysname,@table sysname,@column sysname,@old sysname,@new sysname,@qualified nvarchar(300);
-DECLARE claves CURSOR LOCAL FAST_FORWARD FOR
-SELECT OBJECT_SCHEMA_NAME(f.parent_object_id),OBJECT_NAME(f.parent_object_id),c.name,f.name
-FROM sys.foreign_keys f JOIN sys.foreign_key_columns k ON k.constraint_object_id=f.object_id AND k.constraint_column_id=1
-JOIN sys.columns c ON c.object_id=k.parent_object_id AND c.column_id=k.parent_column_id
-WHERE f.is_system_named=1 AND OBJECT_SCHEMA_NAME(f.parent_object_id) IN('integracion','datos','modelo');
-OPEN claves;FETCH NEXT FROM claves INTO @schema,@table,@column,@old;
-WHILE @@FETCH_STATUS=0
-BEGIN
- SET @new=CASE WHEN @schema='modelo' AND @table='Gasto' AND @column='Id' THEN N'FK_modelo_Gasto_Origen'
- WHEN @schema='modelo' AND @table='Gasto' AND @column='TipoActProyId' THEN N'FK_modelo_Gasto_TipoActProy'
- WHEN @schema='datos' THEN N'FK_datos_'+@table+N'_'+@column ELSE N'FK_'+@table+N'_'+@column END;
- SET @qualified=QUOTENAME(@schema)+N'.'+QUOTENAME(@old);
- IF @old<>@new AND OBJECT_ID(QUOTENAME(@schema)+N'.'+QUOTENAME(@new)) IS NULL
-  EXEC sys.sp_rename @qualified,@new,N'OBJECT';
- FETCH NEXT FROM claves INTO @schema,@table,@column,@old;
-END;
-CLOSE claves;DEALLOCATE claves;
 GO

@@ -4,30 +4,70 @@ import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import { usePolling } from "./composables/usePolling";
 import { api } from "./services/api";
+import NavIcon from "./components/NavIcon.vue";
 
 const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
 const sessionError = ref("");
 const connected = ref(false);
+const menuOpen = ref(false);
 const navigation = computed(() => [
-  ...(auth.canWrite ? [{ path: "/", title: "Carga de datos", icon: "↥" }] : []),
-  { path: "/ui/seguimiento", title: "Seguimiento", icon: "☷" },
-  { path: "/ui/ejecucion", title: "Ejecución del servicio", icon: "◴" },
-  { path: "/ui/metricas", title: "Métricas de carga", icon: "▥" },
-  { path: "/ui/observaciones", title: "Observaciones", icon: "!" },
-  ...(auth.isAdmin
-    ? [{ path: "/ui/auditoria", title: "Auditoría", icon: "◷" }]
-    : []),
-  { path: "/ui/datos", title: "Registros XML", icon: "▤" },
-  { path: "/ui/modelo", title: "Modelo 3FN", icon: "◇" },
+  {
+    title: "Procesamiento",
+    description: "Cargas, estados y rendimiento",
+    items: [
+      ...(auth.canWrite
+        ? [{ path: "/", title: "Carga de datos", icon: "upload" }]
+        : []),
+      { path: "/ui/seguimiento", title: "Seguimiento", icon: "tracking" },
+      {
+        path: "/ui/ejecucion",
+        title: "Ejecución del servicio",
+        icon: "attempts",
+      },
+      { path: "/ui/metricas", title: "Métricas de carga", icon: "metrics" },
+    ],
+  },
+  {
+    title: "Consultas",
+    description: "Información y calidad de datos",
+    items: [
+      { path: "/ui/datos", title: "Registros XML", icon: "xml" },
+      { path: "/ui/modelo", title: "Modelo 3FN", icon: "model" },
+      { path: "/ui/observaciones", title: "Observaciones", icon: "quality" },
+    ],
+  },
   ...(auth.isAdmin
     ? [
-        { path: "/ui/usuarios", title: "Usuarios", icon: "♙" },
-        { path: "/ui/mantenimiento", title: "Mantenimiento", icon: "⚙" },
+        {
+          title: "Administración",
+          description: "Auditoría y configuración",
+          items: [
+            { path: "/ui/auditoria", title: "Auditoría", icon: "audit" },
+            { path: "/ui/usuarios", title: "Usuarios", icon: "users" },
+            {
+              path: "/ui/mantenimiento",
+              title: "Mantenimiento",
+              icon: "maintenance",
+            },
+          ],
+        },
       ]
     : []),
 ]);
+const section = computed(
+  () =>
+    navigation.value.find((group) =>
+      group.items.some((item) => item.path === route.path),
+    )?.title || "Procesamiento",
+);
+watch(
+  () => route.fullPath,
+  () => {
+    menuOpen.value = false;
+  },
+);
 const health = usePolling(async (signal) => {
   if (!auth.user) return;
   try {
@@ -68,34 +108,57 @@ onUnmounted(() => window.removeEventListener("session-expired", expired));
       class="sidebar"
       aria-label="Navegación principal"
     >
-      <RouterLink class="brand" :to="auth.canWrite ? '/' : '/ui/seguimiento'"
-        ><span class="brand-icon">&lt;/&gt;</span
-        ><span
-          >ProIn<span class="brand-light">XML</span
-          ><small>INTEGRACIÓN DE DATOS</small></span
-        ></RouterLink
-      >
-      <div class="nav-label">ESPACIO DE TRABAJO</div>
-      <nav class="primary-nav" aria-label="Pantallas">
-        <RouterLink
-          v-for="item in navigation"
-          :key="item.path"
-          class="nav-item"
-          active-class="selected"
-          :to="item.path"
-          ><span aria-hidden="true">{{ item.icon }}</span
-          >{{ item.title }}</RouterLink
+      <div class="sidebar-brand">
+        <RouterLink class="brand" :to="auth.canWrite ? '/' : '/ui/seguimiento'">
+          <span class="brand-icon" aria-hidden="true">&lt;/&gt;</span>
+          <span
+            >ProIn<span class="brand-light">XML</span
+            ><small>INTEGRACIÓN DE DATOS</small></span
+          >
+        </RouterLink>
+        <button
+          class="menu-toggle"
+          aria-controls="workspace-navigation"
+          :aria-expanded="menuOpen"
+          @click="menuOpen = !menuOpen"
         >
-      </nav>     
+          {{ menuOpen ? "Cerrar menú" : "Menú" }}
+          <span aria-hidden="true">{{ menuOpen ? "×" : "☰" }}</span>
+        </button>
+      </div>
+      <nav
+        id="workspace-navigation"
+        :class="['primary-nav', { 'menu-open': menuOpen }]"
+        aria-label="Pantallas"
+        @keydown.esc="menuOpen = false"
+      >
+        <section
+          v-for="group in navigation"
+          :key="group.title"
+          class="nav-group"
+          :aria-label="group.title"
+        >
+          <div class="nav-label">{{ group.title }}</div>
+          <RouterLink
+            v-for="item in group.items"
+            :key="item.path"
+            class="nav-item"
+            active-class="selected"
+            :to="item.path"
+            @click="menuOpen = false"
+          >
+            <NavIcon :name="item.icon" /><span>{{ item.title }}</span>
+          </RouterLink>
+        </section>
+      </nav>
       <div class="sidebar-footer">
-        <span class="environment-dot"></span
-        ><span>Entorno local</span
-        ><a
+        <span class="version-tag">v1.0</span>
+        <a
           href="/docs"
           target="_blank"
           rel="noopener"
           aria-label="Documentación de la API"
-          >↗</a
+          >Documentación API</a
         >
       </div>
     </aside>
@@ -105,7 +168,7 @@ onUnmounted(() => window.removeEventListener("session-expired", expired));
           <span id="session-name"
             >{{ auth.user?.NombreUsuario }} · {{ auth.user?.Rol }}</span
           ><button id="logout" class="text-button" @click="logout">
-            Cerrar sesión ↗
+            Cerrar sesión
           </button>
         </div>
         <p v-if="sessionError" class="notice notice-error" role="alert">
@@ -113,8 +176,11 @@ onUnmounted(() => window.removeEventListener("session-expired", expired));
         </p>
         <header class="page-header">
           <div>
-            <div class="eyebrow">INTEGRACIÓN / MEF</div>
-            <h1>{{ route.meta.title }}<span>.</span></h1>
+            <div class="eyebrow">
+              <span>ESPACIO DE TRABAJO</span><span aria-hidden="true">/</span
+              >{{ section }}
+            </div>
+            <h1>{{ route.meta.title }}</h1>
             <p>{{ route.meta.description }}</p>
           </div>
           <div

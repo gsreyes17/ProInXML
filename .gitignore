@@ -4,6 +4,7 @@ __pycache__/
 .env
 .runtime/
 .coverage
+.ruff_cache/
 *.egg-info/
 .tools/
 node_modules/

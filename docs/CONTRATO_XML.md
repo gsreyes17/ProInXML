@@ -1,6 +1,6 @@
 # Contrato de los 39 campos XML
 
-Perfil previo a la migración: 7 documentos reales almacenados, 10.719 Items. Ningún documento resultó ilegible. Los 39 campos estuvieron presentes en todos los Items. Hubo 71 unidades de medida vacías; los demás campos no tuvieron valores vacíos ni formatos anómalos en esta muestra. No se observaron etiquetas ausentes ni `xsi:nil` reales; esos casos se cubren con pruebas automatizadas.
+Perfil de una muestra inicial: 7 documentos reales almacenados, 10.719 Items. Ningún documento resultó ilegible. Los 39 campos estuvieron presentes en todos los Items. Hubo 71 unidades de medida vacías; los demás campos no tuvieron valores vacíos ni formatos anómalos en esta muestra. No se observaron etiquetas ausentes ni `xsi:nil` reales; esos casos se cubren con pruebas automatizadas.
 
 Todos los valores se recortan en los extremos. Los códigos conservan los ceros originales, sin rellenarlos ni asignar nombres. El parser exige el namespace `http://www.mef.gob.pe/` y la raíz `DataGasto`. Rechaza DTD, entidades, campos duplicados, campos desconocidos y documentos incompletos.
 
@@ -56,4 +56,4 @@ Reglas adicionales:
 - Unidad vacía o espacios genera `UNIDAD_VACIA`; ausente, `UNIDAD_AUSENTE`; `xsi:nil=true/1`, `UNIDAD_NIL`. Las tres producen NULL y Advertencia, sin bloquear.
 - En los 71 vacíos reales, `IdMeta` e `IdFinalidad` fueron ambos `99999`. Es un hallazgo de la muestra, no una dependencia impuesta a toda la fuente.
 
-El script `scripts/perfilar_xml.py` acepta carpeta/lista de XML o `--base-datos`; genera un JSON con presentes, vacíos, ausentes, nil y formatos raros para cada campo. Si el servicio presenta otros casos, el contrato debe revisarse explícitamente antes de ampliar campos nulos.
+Si el servicio presenta otros casos, el contrato debe revisarse explícitamente antes de ampliar campos nulos.

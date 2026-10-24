@@ -38,9 +38,12 @@ async function login() {
 <template>
   <section class="login-page">
     <div class="card login-card">
-      <div class="login-brand">&lt;/&gt; ProInXML</div>
-      <div class="eyebrow">TALLER DE INTEGRACIONES</div>
-      <h1>Inicia sesión.</h1>
+      <div class="login-brand">
+        <span class="brand-icon" aria-hidden="true">&lt;/&gt;</span> ProInXML
+        <span class="login-version">1.0</span>
+      </div>
+      <div class="eyebrow">TU ESPACIO DE INTEGRACIÓN</div>
+      <h1>Inicia sesión</h1>
       <p class="card-intro">Accede a tus cargas, datos y trazabilidad.</p>
       <p v-if="error" class="notice notice-error" role="alert" id="login-error">
         {{ error }}

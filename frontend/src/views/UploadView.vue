@@ -65,7 +65,7 @@ async function submit(excel = false) {
     <div class="card upload-card">
       <form id="upload-form" @submit.prevent="submit(false)">
         <div class="section-number">01 <span>NUEVA CARGA</span></div>
-        <h2>Todo empieza con un enlace.</h2>
+        <h2>Registrar una carga</h2>
         <p class="card-intro">
           Pega una o varias URLs del MEF para cargar sus datos.
         </p>
@@ -86,7 +86,7 @@ async function submit(excel = false) {
         ></textarea>
         <div class="input-helper">
           <span>Un enlace por línea · máximo 1.000</span>
-          ><button
+          <button
             id="example"
             type="button"
             class="text-button"

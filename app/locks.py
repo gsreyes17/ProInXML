@@ -2,7 +2,7 @@
 
 
 def integration_lock(connection, *, exclusive=False):
-    mode = 'Exclusive' if exclusive else 'Shared'
+    mode = "Exclusive" if exclusive else "Shared"
     connection.execute(
         "DECLARE @r int; EXEC @r=sys.sp_getapplock "
         "@Resource=N'ProInXML:integracion:mantenimiento',@LockMode=?,"

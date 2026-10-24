@@ -1,70 +1,58 @@
-# Operación, errores y reproceso
+# Operación y configuración
 
-## Cargar y consultar
+## Configurar la conexión
 
-1. Ejecutar `iniciar.cmd` y entrar en la aplicación.
-2. Pegar hasta 1.000 enlaces, uno por línea, o importar un Excel con URLs en su primera columna. La carga real no necesita una columna con el número esperado de registros.
-3. Revisar Seguimiento: registrar el lote solo encola; `Completado` confirma la carga. `YaCargada` reutiliza una consulta publicada y `CompletadoSinDatos` confirma una respuesta completa sin Items.
-4. En Ejecución del servicio, filtrar por lote o trabajo para ver intentos, HTTP, etapas y métricas. Abrir Observaciones para incidencias de calidad.
-5. Registros XML permite explorar 39 campos y abrir la trazabilidad del documento. Modelo navega las relaciones normalizadas. Auditoría muestra cambios, cargas y accesos.
+Copiar `.env.example` como `.env` en una instalación nueva. Para SQL Server local con autenticación Windows: `MSSQL_TRUSTED_CONNECTION=yes`. Para una cuenta SQL: usar `no` y completar `MSSQL_USER` y `MSSQL_PASSWORD`. La instalación requiere permisos para crear base, tablas, procedimientos y roles; `proinxml_app` define los permisos de una cuenta de ejecución.
 
-## Matriz de errores
+El instalador respeta `MSSQL_DATABASE`; también admite `--base-datos Nombre`. Los SQL escritos para SSMS apuntan a `ProInXML`; el instalador adapta el nombre. No crear el usuario administrador otra vez al actualizar una instalación existente.
 
-| Situación | Comportamiento | Acción del operador |
-| --- | --- | --- |
-| URL de otro host/ruta o parámetros inválidos | Se rechaza la entrada antes de crear el lote | Corregir los enlaces señalados |
-| Enlace repetido dentro del lote | Se omite el duplicado | Revisar el resumen de la carga |
-| Consulta con versión válida | Trabajo `YaCargada`; no descarga | Administrador puede usar Forzar revisión si necesita comprobar cambios |
-| Timeout, red caída, HTTP 408/429/5xx | Reintento con espera creciente, hasta cuatro fallos | Esperar o revisar el servicio; después usar Reintentar |
-| HTTP 3xx, 4xx restante | Trabajo fallido, respuesta conservada si llegó completa y dentro del límite | Revisar URL/contrato; no se siguen redirecciones |
-| HTTP nulo | No se recibió respuesta | Consultar error de red; nunca equivale a HTTP 200 |
-| XML truncado o contrato/tipo inválido | No publica, revierte todo el detalle de esa carga y conserva bytes | Revisar Intento y corregir origen o contrato antes de reintentar |
-| Unidad vacía/espacios, ausente o `xsi:nil` | `NULL` y Advertencia; carga completa | Consultar código de observación; no rellenar valores ficticios |
-| `TipoActProy` distinto de 2/3 | Guarda detalle representable y observación Error; no normaliza ni publica | Revisar contrato/origen; conserva vigente la versión anterior |
-| Respuesta demasiado grande | Falla sin tratar el contenido parcial como un XML completo | Ajustar `MAX_XML_BYTES` si corresponde y reintentar |
-| Error SQL o bloqueo temporal | Revierte la transacción y programa reintento si SQL responde | Revisar log; ante caída del motor la cola se recupera por lease |
-| Worker interrumpido | Lease de 10 min; al vencer, vuelve a cola y el intento queda Interrumpido | Reiniciar worker; no recrear el lote para recuperar la cola |
-| Sesión vencida/API reiniciada | Solicita login | Volver a iniciar sesión |
+| Variable | Referencia |
+| --- | --- |
+| `WORKER_CONCURRENCY` | 8; admite 1 a 20 |
+| `WORKER_POLL_SECONDS` | 5 segundos sin trabajo pendiente |
+| `MAX_XML_BYTES` | 32 MiB por respuesta |
+| `MEF_CIRCUIT_FAILURES` | 5 fallos transitorios consecutivos |
+| `MEF_CIRCUIT_PAUSE_SECONDS` | 30 segundos de pausa automática |
+| `SESSION_SECONDS` | 28.800 segundos |
+| `COOKIE_SECURE` | `no` para HTTP local, `yes` al servir HTTPS |
 
-## Reintentar y forzar revisión
+Reiniciar API y worker para aplicar cambios de entorno. La descarga mantiene conexión de 10 s, lectura de 45 s y presupuesto total de 180 s comprobado entre bloques. El lease es de diez minutos y el bloqueo de normalización espera hasta 60 s. Aumentar ese último tiempo no aumenta por sí solo la capacidad SQL.
 
-Reintentar está disponible para Administrador y Operador en trabajos fallidos. Reinicia el presupuesto de cuatro fallos y conserva todos los intentos anteriores; sus números siguen creciendo. La auditoría del cambio registra el usuario y el rol.
+## Cargar y revisar
 
-Forzar revisión está disponible para Administrador en trabajos completados, sin datos, ya cargados o fallidos. Encola una descarga nueva. Una huella idéntica reutiliza el documento; una distinta crea una versión. La anterior permanece consultable, y solo se cambia la vigente si la nueva validación completa resulta correcta.
+1. Abrir Carga de datos y pegar hasta 1.000 URLs o importar un XLSX con URLs en la primera columna. El encabezado es opcional; no se exige año ni conteo en otras columnas. El Excel admite 50.000 filas y 10 MiB.
+2. Seguimiento muestra el resultado por trabajo y sus registros. Registrar el lote solo encola; `Completado` confirma persistencia. `CompletadoSinDatos` confirma un XML completo sin Items.
+3. Ejecución del servicio muestra cada intento, HTTP y error; Métricas permite comparar fases y concurrencia. Revisar por lote para no mezclar ensayos separados por largos intervalos.
+4. Registros XML y Modelo 3FN consultan los datos; Observaciones permite abrir el valor afectado y el original. Auditoría conserva cambios, cargas y accesos.
 
-Para reprocesar respuestas históricas almacenadas tras migrar el MVP:
+La cantidad de URLs y los workers son independientes: ocho workers pueden procesar un lote de mil URLs.
 
-```powershell
-.\uv.cmd run --frozen python scripts/backfill_plan.py
-.\uv.cmd run --frozen python scripts/verificar_integridad.py
-```
+## Errores y reintentos
 
-El backfill no hace solicitudes HTTP. Solo recupera trabajos fallidos cuyos documentos conservados tienen HTTP 200 y ahora superan el contrato. Mantiene el intento fallido y agrega otro para el reproceso. También completa el modelo histórico cuando falta. Repetirlo no agrega registros duplicados.
+| Situación | Resultado |
+| --- | --- |
+| URL no permitida | Rechazo antes de registrar el lote |
+| Consulta ya publicada | `YaCargada`, sin descargar otra vez |
+| Red/timeout, HTTP 408/429/5xx | Hasta cuatro fallos, con espera creciente y variación aleatoria |
+| HTTP restante distinto de 200 | Fallo para revisión; se conserva la respuesta completa si se recibió |
+| XML truncado, contrato o tipo inválido | Conserva original y revierte el detalle del documento |
+| Unidad de medida vacía/ausente/nil | NULL y advertencia; permite completar |
+| TipoActProy distinto de 2/3 | Conserva detalle representable con Error; no normaliza ni publica |
+| Worker interrumpido | Recupera por lease y conserva el intento como Interrumpido |
+| Fallo SQL | Revierte la transacción; reintenta si puede marcar el fallo |
 
-## Configuración y límites
+HTTP NULL significa que no se recibió una respuesta con cabeceras; no implica HTTP 500. Los fallos transitorios recuperados permanecen en el historial aunque el trabajo termine completado. La cuenta `sistema` identifica al worker y no permite login.
 
-Editar `.env` y reiniciar los procesos para aplicar cambios. `WORKER_CONCURRENCY` admite 1 a 20 (predeterminado 20). Un valor existente en `.env` tiene prioridad sobre ese predeterminado. Se conserva una única cola SQL con hasta 20 descargas en paralelo por worker; la inserción y normalización siguen coordinadas por el bloqueo global. `MEF_CIRCUIT_FAILURES=5` y `MEF_CIRCUIT_PAUSE_SECONDS=30` controlan la pausa automática ante errores transitorios. No constituyen una pausa manual de lote, que queda pendiente por decisión del usuario.
+Administrador y Operador pueden reintentar trabajos fallidos. Administrador puede forzar revisión de una consulta publicada: una huella idéntica reutiliza el documento; una distinta conserva una versión nueva. El historial de intentos nunca se reinicia.
 
-Abrir **Métricas de carga** para identificar descarga, espera SQL, validación, inserción y normalización. Filtrar por lote para evitar que ensayos separados distorsionen las tasas. La [guía de métricas](METRICAS.md) explica el P95 y cómo comparar 4, 8, 12 y 20 descargas. En instalaciones existentes, aplicar también `sql/006_metricas.sql` con respaldo y procesos detenidos.
+## Limpiar el laboratorio
 
-La API utiliza una instancia de proceso; las sesiones no se comparten entre instancias. `COOKIE_SECURE=no` corresponde al HTTP local; si se sirve mediante HTTPS, usar `yes`. Las cuentas se administran en Usuarios y las contraseñas se guardan con Argon2.
+Administrador puede eliminar un documento o vaciar las cargas desde Mantenimiento. Requiere vista previa, motivo y confirmación exacta. Una vista previa obsoleta o un trabajo en curso impiden la operación. Si quedó un lease pendiente, iniciar el worker para recuperarlo; la pausa manual de lotes sigue pendiente.
 
-Antes de una migración, detener API/worker y respaldar la base. Los scripts no purgan documentos, auditoría histórica ni datos anteriores. Los informes de ejecución y accesos tienen paginación; para grandes volúmenes conviene filtrar por lote/trabajo/documento.
+Eliminar un documento retira original, detalle, observaciones y hechos, y poda entidades sin referencias. Conserva intentos y cancela los trabajos vinculados. Si era vigente, la consulta queda sin documento publicado; no se promociona una versión anterior.
 
-Para actualizar dependencias se utilizan `uv` y `pnpm`, conservando sus lockfiles. Ejecuta `scripts/preparar.ps1` al clonar o después de cambiar dependencias. Tras modificar Vue, compila con `pnpm --dir frontend build` antes de usar `iniciar.cmd`. Para desarrollo con recarga de componentes utiliza `pnpm --dir frontend dev` junto con FastAPI en el puerto 8000.
+Vaciar las cargas elimina también lotes, consultas, trabajos e intentos. Se conservan cuentas, roles, servicio, catálogo, auditoría y análisis. La operación y su evento de auditoría forman una transacción. No se usa TRUNCATE ni se reinician IDs. Las métricas y bitácoras retenidas siguen ocupando espacio.
 
-## Ensayo de carga
+## Actualizar y diagnosticar
 
-`scripts/prueba_carga_local.py` requiere `MSSQL_DATABASE=ProInXML_Validacion`. Usa los parámetros de las URLs de `XML_models/URLs.xlsx`, SQL Server real y respuestas HTTP simuladas con un Item por documento; algunas unidades vienen vacías y una fracción de consultas falla una vez con HTTP 503. Simula un corte de lease, acelera únicamente las esperas de reintento del ensayo, repite el lote y compara detalle/modelo. Se conserva como herramienta de validación opcional; no forma parte del arranque ni se ejecuta automáticamente.
-
-## Limpieza para repetir el laboratorio
-
-1. Aplicar `sql/005_mantenimiento.sql` con una copia de seguridad y con API y worker detenidos; en una instalación nueva se incluye automáticamente al aplicar todos los scripts.
-2. Entrar como Administrador y abrir **Mantenimiento**. Inspeccionar o filtrar documentos antes de elegir **Eliminar documento** o **Vaciar todas las cargas**. Los filtros de la tabla no limitan el vaciado global.
-3. Revisar los conteos, indicar el motivo y escribir la confirmación exacta. Si hay trabajos en curso, esperar a que terminen y solicitar una nueva vista previa. Si el worker quedó interrumpido, volver a iniciarlo para que recupere sus leases; no se agregó pausa manual de lotes.
-4. Eliminar un documento retira su respuesta, detalle, observaciones y hechos del modelo; se podan únicamente entidades sin referencias. Se conservan trabajos/intentos como historial, cancelando los trabajos vinculados. No se publica una versión anterior automáticamente. Para volver a cargar, registrar la URL en un lote nuevo.
-5. Vaciar todas las cargas retira también lotes, consultas, trabajos e intentos y vacía el modelo. Conserva usuarios, roles, configuración del servicio, catálogo, auditoría y métricas de análisis. No equivale a eliminar la base ni reinicia IDs. Las bitácoras y métricas siguen conteniendo IDs históricos de documentos y lotes eliminados; el filtro de métricas conserva esos lotes.
-
-La eliminación y el evento de auditoría forman una transacción: cualquier fallo revierte los cambios. Conservar las bitácoras implica que el tamaño de la base no vuelve a cero. Un resultado ambiguo por pérdida de conexión debe verificarse consultando nuevamente antes de repetir la operación.
-
-No consulta al MEF. Sus tiempos miden ese conjunto sintético y la máquina local; no estiman cuánto tardarán ni cuánto ocuparán los XML reales. La validación externa completa consiste en importar el Excel real desde la interfaz y dejar terminar los lotes, revisando tasa de error, duración y tamaño de la base en ese entorno.
+Detener los procesos y respaldar la base antes de aplicar SQL. Preparar dependencias y ejecutar `scripts/aplicar_sql.py`; no vacía datos. La aplicación guarda logs del worker y Vue en `.runtime/worker.log` y `.runtime/vue.log`. Para las pruebas y herramientas opcionales, ver [VALIDACION.md](VALIDACION.md).

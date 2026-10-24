@@ -198,18 +198,22 @@ function closeRecords() {
             }}
           </option>
         </select></label
-      ><button
-        id="refresh"
-        class="button button-outline"
-        :disabled="poll.loading.value"
-        @click="poll.refresh"
       >
-        ↻ Actualizar</button
-      ><span class="subtle" role="status">{{
-        poll.updated.value
-          ? `Actualizado ${poll.updated.value.toLocaleTimeString("es-PE")}`
-          : "Actualizando…"
-      }}</span>
+      <div class="batch-actions">
+        <button
+          id="refresh"
+          class="button button-outline"
+          :disabled="poll.loading.value"
+          @click="poll.refresh"
+        >
+          ↻ Actualizar
+        </button>
+        <span class="sync-status" role="status">{{
+          poll.updated.value
+            ? `Actualizado ${poll.updated.value.toLocaleTimeString("es-PE")}`
+            : "Actualizando…"
+        }}</span>
+      </div>
     </div>
     <p
       v-if="poll.error.value || error"

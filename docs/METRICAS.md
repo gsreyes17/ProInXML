@@ -2,7 +2,7 @@
 
 La pantalla **Métricas de carga** (`/ui/metricas`) se actualiza cada tres segundos y está disponible para los tres roles. Permite filtrar por lote, concurrencia registrada y resultado, consultar promedios/P95, comparar rendimiento y abrir el detalle de cada intento.
 
-El límite de entrada manual es **1.000 URLs por lote**. El worker usa **20 descargas simultáneas por defecto**, configurable con `WORKER_CONCURRENCY=1..20` en `.env`; reinicia los procesos para aplicar el cambio. Son trabajadores sobre una misma cola SQL, no veinte colas independientes. Si `.env` conserva un valor anterior, ese valor tiene prioridad.
+El límite de entrada manual es **1.000 URLs por lote**. El worker usa **8 descargas simultáneas por defecto**, configurable con `WORKER_CONCURRENCY=1..20` en `.env`; reinicia los procesos para aplicar el cambio. Son trabajadores sobre una misma cola SQL, no colas independientes. Si `.env` conserva un valor anterior, ese valor tiene prioridad.
 
 ## Qué se mide
 
@@ -48,7 +48,7 @@ Los intentos anteriores a esta instrumentación siguen en Ejecución del servici
 Para actualizar otra instalación, detener API/worker, respaldar y aplicar:
 
 ```powershell
-.\uv.cmd run --frozen python scripts/aplicar_sql.py sql/006_metricas.sql
+.\uv.cmd run --frozen python scripts/aplicar_sql.py sql/005_metricas.sql
 ```
 
 La migración es aditiva y repetible. La cuenta SQL de aplicación puede leer, insertar y actualizar métricas, y tiene denegado borrarlas o alterar su esquema.
