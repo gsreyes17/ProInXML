@@ -1,0 +1,30 @@
+{
+  "name": "proinxml-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "vue-tsc --noEmit",
+    "build": "pnpm typecheck && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "format": "prettier --write src index.html vite.config.ts tsconfig.json package.json"
+  },
+  "dependencies": {
+    "vue": "3.5.44",
+    "vue-router": "4.6.4",
+    "pinia": "4.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.10",
+    "vite": "8.3.5",
+    "typescript": "~5.9.3",
+    "vue-tsc": "3.3.13",
+    "prettier": "^3.6.0"
+  }
+}

@@ -1,0 +1,762 @@
+// Generado desde metadatos de SQL Server; sin registros ni credenciales.
+// Copiar TODO este archivo en el editor DBML de dbdiagram.io.
+// PK, identidad, nulabilidad, tipos, valores por defecto, claves unicas, checks y FK fisicas.
+// No incluye vistas, procedimientos, triggers ni indices no unicos.
+Project "ProInXML" {
+  database_type: 'MSSQL'
+  Note: 'ProInXML: XML original, detalle, modelo normalizado, cola, sistema y auditoria. Las sesiones actuales viven en memoria de FastAPI.'
+}
+
+Table "analisis"."MetricaIntento" [headercolor: #0369A1] {
+  "Id" bigint [pk, not null, increment]
+  "IntentoId" bigint [not null]
+  "TrabajoId" bigint [not null]
+  "LoteId" bigint [not null]
+  "DocumentoId" bigint [null]
+  "NombreLote" nvarchar(260) [not null]
+  "UrlSolicitada" nvarchar(1000) [not null]
+  "AnoEje" smallint [not null]
+  "SecEjec" int [not null]
+  "Concurrencia" smallint [not null]
+  "Estado" varchar(16) [not null, default: `('EnCurso')`]
+  "Etapa" nvarchar(40) [not null, default: `(N'Descarga')`]
+  "HttpStatus" int [null]
+  "BytesRecibidos" bigint [not null, default: `((0))`]
+  "RegistrosLeidos" int [not null, default: `((0))`]
+  "RegistrosInsertados" int [not null, default: `((0))`]
+  "RegistrosReutilizados" int [not null, default: `((0))`]
+  "RegistrosNormalizados" int [not null, default: `((0))`]
+  "DescargaMs" decimal(19,3) [null]
+  "OriginalMs" decimal(19,3) [null]
+  "EsperaSqlMs" decimal(19,3) [null]
+  "ValidacionMs" decimal(19,3) [null]
+  "InsercionMs" decimal(19,3) [null]
+  "NormalizacionMs" decimal(19,3) [null]
+  "ConfirmacionMs" decimal(19,3) [null]
+  "TotalMs" decimal(19,3) [null]
+  "InicioUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "FinUtc" datetime2(3) [null]
+  "MedicionFinalizada" bit [not null, default: `((0))`]
+  "Error" nvarchar(2000) [null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "IntentoId" [unique, name: 'UQ_Metrica_Intento']
+  }
+  checks {
+    `([BytesRecibidos]>=(0))` [name: 'CK_Metrica_Bytes']
+    `([Concurrencia]>=(1) AND [Concurrencia]<=(20))` [name: 'CK_Metrica_Concurrencia']
+    `([Estado]='Interrumpido' OR [Estado]='Error' OR [Estado]='Completado' OR [Estado]='EnCurso')` [name: 'CK_Metrica_Estado']
+    `([RegistrosLeidos]>=(0) AND [RegistrosInsertados]>=(0) AND [RegistrosReutilizados]>=(0) AND [RegistrosNormalizados]>=(0))` [name: 'CK_Metrica_Filas']
+    `(([DescargaMs] IS NULL OR [DescargaMs]>=(0)) AND ([OriginalMs] IS NULL OR [OriginalMs]>=(0)) AND ([EsperaSqlMs] IS NULL OR [EsperaSqlMs]>=(0)) AND ([ValidacionMs] IS NULL OR [ValidacionMs]>=(0)) AND ([InsercionMs] IS NULL OR [InsercionMs]>=(0)) AND ([NormalizacionMs] IS NULL OR [NormalizacionMs]>=(0)) AND ([ConfirmacionMs] IS NULL OR [ConfirmacionMs]>=(0)) AND ([TotalMs] IS NULL OR [TotalMs]>=(0)))` [name: 'CK_Metrica_Tiempos']
+  }
+  Note: 'Una medicion por intento; fases en milisegundos con tres decimales. NULL significa etapa no ejecutada. Filas insertadas solo tras commit. Los IDs de lote, trabajo, intento y documento son historicos SIN FK; las metricas sobreviven a la limpieza. Concurrencia es la configurada por el worker, no una medicion instantanea de actividad.'
+}
+
+Table "auditoria"."Cambio" [headercolor: #7C3AED] {
+  "Id" bigint [pk, not null, increment]
+  "Tabla" nvarchar(128) [not null]
+  "RegistroId" bigint [not null]
+  "Operacion" char(1) [not null]
+  "FechaUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "Actor" nvarchar(128) [not null]
+  "LoginSql" sysname [not null]
+  "Correlacion" uniqueidentifier [null]
+  "Antes" nvarchar(max) [null]
+  "Despues" nvarchar(max) [null]
+  "UsuarioId" bigint [null]
+  "Rol" nvarchar(40) [not null, default: `(N'Sin identificar')`]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  checks {
+    `([Antes] IS NULL OR isjson([Antes])=(1))` [name: 'CK__Cambio__Antes__4CA06362']
+    `([Despues] IS NULL OR isjson([Despues])=(1))` [name: 'CK__Cambio__Despues__4D94879B']
+    `([Operacion]='D' OR [Operacion]='U' OR [Operacion]='I')` [name: 'CK__Cambio__Operacio__4AB81AF0']
+  }
+  Note: 'Inmutable. Antes/Despues en JSON, usuario, actor, rol y correlacion. RegistroId=0 en integracion.Documento identifica un vaciado global.'
+}
+
+Table "auditoria"."CargaDocumento" [headercolor: #7C3AED] {
+  "Id" bigint [pk, not null, increment]
+  "DocumentoId" bigint [not null, note: 'Identificador historico; no es FK tras la migracion 005.']
+  "LoteId" bigint [not null, note: 'Identificador historico; no es FK tras la migracion 005.']
+  "UsuarioId" bigint [null]
+  "Rol" nvarchar(40) [not null]
+  "FilasInsertadas" int [not null]
+  "FilasReutilizadas" int [not null]
+  "FechaUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "DocumentoId" [unique, name: 'UQ_Carga_Documento']
+  }
+  Note: 'Inmutable. DocumentoId y LoteId son identificadores historicos SIN FK, para conservar auditoria tras eliminar cargas. UsuarioId mantiene su FK.'
+}
+
+Table "catalogo"."TipoActProy" [headercolor: #475569] {
+  "Id" bigint [pk, not null]
+  "Nombre" nvarchar(40) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  checks {
+    `([Id]=(3) OR [Id]=(2))` [name: 'CK__TipoActProy__Id__5070F446']
+  }
+}
+
+Table "datos"."Gasto" [headercolor: #EA580C] {
+  "Id" bigint [pk, not null, increment]
+  "DocumentoId" bigint [not null]
+  "Ordinal" int [not null]
+  "AnoEje" smallint [not null]
+  "MesEje" tinyint [not null]
+  "SecEjec" int [not null]
+  "TipoActProy" bigint [not null]
+  "IdNivelGobierno" varchar(32) [not null]
+  "Sub_tipo_gobierno" varchar(32) [not null]
+  "IdSector" varchar(32) [not null]
+  "IdPliego" varchar(32) [not null]
+  "IdEjecutora" varchar(32) [not null]
+  "Funcion" varchar(32) [not null]
+  "Programa" varchar(32) [not null]
+  "Programa_ppto" varchar(32) [not null]
+  "Categ_gasto" varchar(32) [not null]
+  "Tipo_transaccion" varchar(32) [not null]
+  "Generica" varchar(32) [not null]
+  "Subgenerica" varchar(32) [not null]
+  "Subgenerica_det" varchar(32) [not null]
+  "Especifica" varchar(32) [not null]
+  "Especifica_det" varchar(32) [not null]
+  "SecFunc" varchar(32) [not null]
+  "IdFuente" varchar(32) [not null]
+  "IdRubro" varchar(32) [not null]
+  "IdTipoRecurso" varchar(32) [not null]
+  "IdComponente" varchar(32) [not null]
+  "IdProyecto" varchar(32) [not null]
+  "IdMeta" varchar(32) [not null]
+  "IdFinalidad" varchar(32) [not null]
+  "IdProyectoSNIP" varchar(32) [not null]
+  "Departamento" varchar(32) [not null]
+  "Provincia" varchar(32) [not null]
+  "Distrito" varchar(32) [not null]
+  "Unidad_Medida" varchar(32) [null]
+  "PIA" decimal(19,4) [not null]
+  "PIM" decimal(19,4) [not null]
+  "Certificado" decimal(19,4) [not null]
+  "CompAnual" decimal(19,4) [not null]
+  "AtencionCompMensual" decimal(19,4) [not null]
+  "Devengado" decimal(19,4) [not null]
+  "Girado" decimal(19,4) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("DocumentoId", "Ordinal") [unique, name: 'UQ_Gasto_DocumentoOrdinal']
+  }
+  checks {
+    `([AnoEje]>=(1900) AND [AnoEje]<=(2100))` [name: 'CK__Gasto__AnoEje__7D439ABD']
+    `([MesEje]>=(0) AND [MesEje]<=(12))` [name: 'CK__Gasto__MesEje__7E37BEF6']
+    `([Ordinal]>(0))` [name: 'CK__Gasto__Ordinal__7C4F7684']
+    `([SecEjec]>(0))` [name: 'CK__Gasto__SecEjec__7F2BE32F']
+  }
+  Note: 'Detalle persistente de los 39 campos XML mas identidad, documento, ordinal y fecha. AnoEje conserva el nombre XML. Unidad_Medida admite NULL.'
+}
+
+Table "integracion"."Consulta" [headercolor: #0F766E] {
+  "Id" bigint [pk, not null, increment]
+  "Url" nvarchar(1000) [not null]
+  "AnoEje" smallint [not null]
+  "NivelGobierno" varchar(8) [not null]
+  "SecEjec" int [not null]
+  "DocumentoActualId" bigint [null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "ServicioId" bigint [not null]
+  indexes {
+    ("ServicioId", "AnoEje", "NivelGobierno", "SecEjec") [unique, name: 'UQ_Consulta_Parametros']
+  }
+  checks {
+    `([AnoEje]>=(1900) AND [AnoEje]<=(2100))` [name: 'CK__Fuente__AnoEje__5812160E']
+    `([SecEjec]>(0))` [name: 'CK__Fuente__SecEjec__59FA5E80']
+  }
+  Note: 'URL canonica y parametros de negocio. DocumentoActualId publica la version vigente de esta misma consulta.'
+}
+
+Table "integracion"."Documento" [headercolor: #EA580C] {
+  "Id" bigint [pk, not null, increment]
+  "ConsultaId" bigint [not null]
+  "IntentoId" bigint [not null]
+  "Sha256" char(64) [not null]
+  "Respuesta" varbinary(max) [not null]
+  "ContentType" nvarchar(200) [null]
+  "EsValido" bit [not null, default: `((0))`]
+  "CantidadRegistros" int [null]
+  "ErrorValidacion" nvarchar(2000) [null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("ConsultaId", "Id") [unique, name: 'UQ_Documento_FuenteId']
+    ("ConsultaId", "Sha256") [unique, name: 'UQ_Documento_Hash']
+  }
+  checks {
+    `([CantidadRegistros]>=(0))` [name: 'CK__Documento__Canti__75A278F5']
+  }
+  Note: 'Respuesta original gzip y SHA-256 de los bytes originales. Puede contener un XML rechazado o una respuesta HTTP de error.'
+}
+
+Table "integracion"."Intento" [headercolor: #0F766E] {
+  "Id" bigint [pk, not null, increment]
+  "TrabajoId" bigint [not null]
+  "Numero" int [not null]
+  "Estado" varchar(24) [not null, default: `('EnCurso')`]
+  "InicioUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "FinUtc" datetime2(3) [null]
+  "HttpStatus" int [null]
+  "Error" nvarchar(2000) [null]
+  "Etapa" nvarchar(40) [not null, default: `(N'Descarga')`]
+  "UrlSolicitada" nvarchar(1000) [not null]
+  "DocumentoId" bigint [null]
+  "RegistrosLeidos" int [null]
+  "RegistrosInsertados" int [null]
+  "RegistrosReutilizados" int [null]
+  "RegistrosRechazados" int [null]
+  "Observaciones" int [null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("TrabajoId", "Numero") [unique, name: 'UQ_Intento_Numero']
+  }
+  checks {
+    `([Estado]='Interrumpido' OR [Estado]='Error' OR [Estado]='Completado' OR [Estado]='EnCurso')` [name: 'CK_Intento_Estado']
+  }
+  Note: 'HTTP, inicio/fin, etapa, error y conteos de cada intento. HTTP NULL significa que no hubo respuesta.'
+}
+
+Table "integracion"."Lote" [headercolor: #0F766E] {
+  "Id" bigint [pk, not null, increment]
+  "Nombre" nvarchar(260) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "CreadoPorUsuarioId" bigint [not null]
+}
+
+Table "integracion"."ObservacionDato" [headercolor: #EA580C] {
+  "Id" bigint [pk, not null, increment]
+  "DocumentoId" bigint [not null]
+  "OrdinalItem" int [not null]
+  "Campo" varchar(64) [not null]
+  "CodigoObservacion" varchar(64) [not null]
+  "Severidad" varchar(16) [not null]
+  "Detalle" nvarchar(1000) [not null]
+  "FechaUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("DocumentoId", "OrdinalItem", "Campo", "CodigoObservacion") [unique, name: 'UQ_Observacion_Origen']
+  }
+  checks {
+    `([Severidad]='Error' OR [Severidad]='Advertencia' OR [Severidad]='Info')` [name: 'CK_Observacion_Severidad']
+  }
+  Note: 'Documento y ordinal del Item observado. Advertencias no bloquean; errores de calidad impiden publicar.'
+}
+
+Table "integracion"."Servicio" [headercolor: #2563EB] {
+  "Id" bigint [pk, not null, increment]
+  "Nombre" nvarchar(160) [not null]
+  "UrlBase" nvarchar(200) [not null]
+  "Ruta" nvarchar(400) [not null]
+  "VersionContrato" varchar(32) [not null]
+  "Activo" bit [not null, default: `((1))`]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("UrlBase", "Ruta") [unique, name: 'UQ_Servicio_Endpoint']
+  }
+}
+
+Table "integracion"."Trabajo" [headercolor: #0F766E] {
+  "Id" bigint [pk, not null, increment]
+  "LoteId" bigint [not null]
+  "ConsultaId" bigint [not null]
+  "Estado" varchar(24) [not null, default: `('Pendiente')`]
+  "Intentos" int [not null, default: `((0))`]
+  "MaxIntentos" int [not null, default: `((4))`]
+  "ProximoIntentoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "LeaseHastaUtc" datetime2(3) [null]
+  "Token" uniqueidentifier [null]
+  "UltimoError" nvarchar(2000) [null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "FinalizadoUtc" datetime2(3) [null]
+  "DocumentoId" bigint [null]
+  indexes {
+    ("LoteId", "ConsultaId") [unique, name: 'UQ_Trabajo_LoteFuente']
+  }
+  checks {
+    `([Intentos]>=(0))` [name: 'CK__Trabajo__Intento__6383C8BA']
+    `([MaxIntentos]>=(1) AND [MaxIntentos]<=(10))` [name: 'CK__Trabajo__MaxInte__656C112C']
+    `([Estado]='Cancelado' OR [Estado]='YaCargada' OR [Estado]='Fallido' OR [Estado]='CompletadoSinDatos' OR [Estado]='Completado' OR [Estado]='EnCurso' OR [Estado]='Pendiente')` [name: 'CK_Trabajo_Estado']
+  }
+  Note: 'Cola persistente por lote y consulta. Reintentos, lease, token y estado.'
+}
+
+Table "modelo"."CategoriaGasto" [headercolor: #0D9488] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_CategoriaGasto_Clave']
+  }
+}
+
+Table "modelo"."Componente" [headercolor: #BE185D] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_Componente_Clave']
+  }
+}
+
+Table "modelo"."ContextoEjecutora" [headercolor: #0284C7] {
+  "Id" bigint [pk, not null, increment]
+  "EjecutoraId" bigint [not null]
+  "AnoEje" smallint [not null]
+  "SecEjec" int [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("EjecutoraId", "AnoEje", "SecEjec") [unique, name: 'UQ_ContextoEjecutora_Clave']
+  }
+}
+
+Table "modelo"."Departamento" [headercolor: #4338CA] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_Departamento_Clave']
+  }
+}
+
+Table "modelo"."Distrito" [headercolor: #4338CA] {
+  "Id" bigint [pk, not null, increment]
+  "ProvinciaId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("ProvinciaId", "Codigo") [unique, name: 'UQ_Distrito_Clave']
+  }
+}
+
+Table "modelo"."Ejecutora" [headercolor: #0284C7] {
+  "Id" bigint [pk, not null, increment]
+  "PliegoId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("PliegoId", "Codigo") [unique, name: 'UQ_Ejecutora_Clave']
+  }
+}
+
+Table "modelo"."Especifica" [headercolor: #4F46E5] {
+  "Id" bigint [pk, not null, increment]
+  "SubgenericaDetalleId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("SubgenericaDetalleId", "Codigo") [unique, name: 'UQ_Especifica_Clave']
+  }
+}
+
+Table "modelo"."EspecificaDetalle" [headercolor: #4F46E5] {
+  "Id" bigint [pk, not null, increment]
+  "EspecificaId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("EspecificaId", "Codigo") [unique, name: 'UQ_EspecificaDetalle_Clave']
+  }
+}
+
+Table "modelo"."Finalidad" [headercolor: #BE185D] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_Finalidad_Clave']
+  }
+}
+
+Table "modelo"."FuenteFinanciamiento" [headercolor: #B45309] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_FuenteFinanciamiento_Clave']
+  }
+}
+
+Table "modelo"."Funcion" [headercolor: #0D9488] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_Funcion_Clave']
+  }
+}
+
+Table "modelo"."Gasto" [headercolor: #166534] {
+  "Id" bigint [pk, not null]
+  "MetaId" bigint [not null]
+  "ProgramaFuncionalId" bigint [not null]
+  "ProgramaPresupuestalId" bigint [not null]
+  "CategoriaGastoId" bigint [not null]
+  "EspecificaDetalleId" bigint [not null]
+  "TipoRecursoId" bigint [not null]
+  "ProyectoId" bigint [not null]
+  "ProyectoSNIPId" bigint [not null]
+  "ComponenteId" bigint [not null]
+  "DistritoId" bigint [not null]
+  "TipoActProyId" bigint [not null]
+  "MesEje" tinyint [not null]
+  "PIA" decimal(19,4) [not null]
+  "PIM" decimal(19,4) [not null]
+  "Certificado" decimal(19,4) [not null]
+  "CompAnual" decimal(19,4) [not null]
+  "AtencionCompMensual" decimal(19,4) [not null]
+  "Devengado" decimal(19,4) [not null]
+  "Girado" decimal(19,4) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  Note: 'Hecho normalizado. Su Id tambien es FK a datos.Gasto.Id; representa una relacion 1 a 0..1, pues un detalle rechazado no se normaliza.'
+}
+
+Table "modelo"."Generica" [headercolor: #4F46E5] {
+  "Id" bigint [pk, not null, increment]
+  "TipoTransaccionId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("TipoTransaccionId", "Codigo") [unique, name: 'UQ_Generica_Clave']
+  }
+}
+
+Table "modelo"."Meta" [headercolor: #BE185D] {
+  "Id" bigint [pk, not null, increment]
+  "SecuenciaFuncionalId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "FinalidadId" bigint [not null]
+  "UnidadMedidaId" bigint [null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("SecuenciaFuncionalId", "Codigo", "FinalidadId", "UnidadMedidaId") [unique, name: 'UQ_Meta_Clave']
+  }
+  Note: 'UnidadMedidaId es opcional. La clave natural incluye ese valor nulo segun las reglas de SQL Server.'
+}
+
+Table "modelo"."NivelGobierno" [headercolor: #0284C7] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_NivelGobierno_Clave']
+  }
+}
+
+Table "modelo"."Pliego" [headercolor: #0284C7] {
+  "Id" bigint [pk, not null, increment]
+  "SectorId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("SectorId", "Codigo") [unique, name: 'UQ_Pliego_Clave']
+  }
+}
+
+Table "modelo"."ProgramaFuncional" [headercolor: #0D9488] {
+  "Id" bigint [pk, not null, increment]
+  "FuncionId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("FuncionId", "Codigo") [unique, name: 'UQ_ProgramaFuncional_Clave']
+  }
+}
+
+Table "modelo"."ProgramaPresupuestal" [headercolor: #0D9488] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_ProgramaPresupuestal_Clave']
+  }
+}
+
+Table "modelo"."Provincia" [headercolor: #4338CA] {
+  "Id" bigint [pk, not null, increment]
+  "DepartamentoId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("DepartamentoId", "Codigo") [unique, name: 'UQ_Provincia_Clave']
+  }
+}
+
+Table "modelo"."Proyecto" [headercolor: #BE185D] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_Proyecto_Clave']
+  }
+}
+
+Table "modelo"."ProyectoSNIP" [headercolor: #BE185D] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_ProyectoSNIP_Clave']
+  }
+}
+
+Table "modelo"."Rubro" [headercolor: #B45309] {
+  "Id" bigint [pk, not null, increment]
+  "FuenteFinanciamientoId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("FuenteFinanciamientoId", "Codigo") [unique, name: 'UQ_Rubro_Clave']
+  }
+}
+
+Table "modelo"."Sector" [headercolor: #0284C7] {
+  "Id" bigint [pk, not null, increment]
+  "SubtipoGobiernoId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("SubtipoGobiernoId", "Codigo") [unique, name: 'UQ_Sector_Clave']
+  }
+}
+
+Table "modelo"."SecuenciaFuncional" [headercolor: #BE185D] {
+  "Id" bigint [pk, not null, increment]
+  "ContextoEjecutoraId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("ContextoEjecutoraId", "Codigo") [unique, name: 'UQ_SecuenciaFuncional_Clave']
+  }
+}
+
+Table "modelo"."Subgenerica" [headercolor: #4F46E5] {
+  "Id" bigint [pk, not null, increment]
+  "GenericaId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("GenericaId", "Codigo") [unique, name: 'UQ_Subgenerica_Clave']
+  }
+}
+
+Table "modelo"."SubgenericaDetalle" [headercolor: #4F46E5] {
+  "Id" bigint [pk, not null, increment]
+  "SubgenericaId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("SubgenericaId", "Codigo") [unique, name: 'UQ_SubgenericaDetalle_Clave']
+  }
+}
+
+Table "modelo"."SubtipoGobierno" [headercolor: #0284C7] {
+  "Id" bigint [pk, not null, increment]
+  "NivelGobiernoId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("NivelGobiernoId", "Codigo") [unique, name: 'UQ_SubtipoGobierno_Clave']
+  }
+}
+
+Table "modelo"."TipoRecurso" [headercolor: #B45309] {
+  "Id" bigint [pk, not null, increment]
+  "RubroId" bigint [not null]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    ("RubroId", "Codigo") [unique, name: 'UQ_TipoRecurso_Clave']
+  }
+}
+
+Table "modelo"."TipoTransaccion" [headercolor: #4F46E5] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_TipoTransaccion_Clave']
+  }
+}
+
+Table "modelo"."UnidadMedida" [headercolor: #BE185D] {
+  "Id" bigint [pk, not null, increment]
+  "Codigo" varchar(32) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Codigo" [unique, name: 'UQ_UnidadMedida_Clave']
+  }
+}
+
+Table "seguridad"."EventoAcceso" [headercolor: #7C3AED] {
+  "Id" bigint [pk, not null, increment]
+  "UsuarioId" bigint [null]
+  "NombreIntentado" nvarchar(80) [not null]
+  "Evento" nvarchar(80) [not null]
+  "Exitoso" bit [not null]
+  "Ip" nvarchar(64) [null]
+  "FechaUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  Note: 'Inmutable. Historial de autenticacion y gestion de cuentas.'
+}
+
+Table "seguridad"."Rol" [headercolor: #2563EB] {
+  "Id" bigint [pk, not null, increment]
+  "Nombre" nvarchar(40) [not null]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "Nombre" [unique, name: 'UQ__Rol__75E3EFCF2E4CFBDA']
+  }
+}
+
+Table "seguridad"."Usuario" [headercolor: #2563EB] {
+  "Id" bigint [pk, not null, increment]
+  "NombreUsuario" nvarchar(80) [not null]
+  "NombreCompleto" nvarchar(160) [not null]
+  "HashContrasena" nvarchar(500) [not null]
+  "RolId" bigint [not null]
+  "Activo" bit [not null, default: `((1))`]
+  "CreadoUtc" datetime2(3) [not null, default: `(sysutcdatetime())`]
+  indexes {
+    "NombreUsuario" [unique, name: 'UQ__Usuario__6B0F5AE0AEBB0492']
+  }
+  Note: 'Hash Argon2, nunca contrasenas en claro. La cuenta sistema identifica al worker y no permite login.'
+}
+
+// Relaciones fisicas. Las referencias historicas de auditoria no se dibujan como FK.
+Ref "FK_Trabajo_Documento": "integracion"."Trabajo".("ConsultaId", "DocumentoId") > "integracion"."Documento".("ConsultaId", "Id")
+Ref "FK_SubtipoGobierno_NivelGobiernoId": "modelo"."SubtipoGobierno"."NivelGobiernoId" > "modelo"."NivelGobierno"."Id"
+Ref "FK_Sector_SubtipoGobiernoId": "modelo"."Sector"."SubtipoGobiernoId" > "modelo"."SubtipoGobierno"."Id"
+Ref "FK_Pliego_SectorId": "modelo"."Pliego"."SectorId" > "modelo"."Sector"."Id"
+Ref "FK_Ejecutora_PliegoId": "modelo"."Ejecutora"."PliegoId" > "modelo"."Pliego"."Id"
+Ref "FK_ContextoEjecutora_EjecutoraId": "modelo"."ContextoEjecutora"."EjecutoraId" > "modelo"."Ejecutora"."Id"
+Ref "FK_ProgramaFuncional_FuncionId": "modelo"."ProgramaFuncional"."FuncionId" > "modelo"."Funcion"."Id"
+Ref "FK_Usuario_Rol": "seguridad"."Usuario"."RolId" > "seguridad"."Rol"."Id"
+Ref "FK_EventoAcceso_Usuario": "seguridad"."EventoAcceso"."UsuarioId" > "seguridad"."Usuario"."Id"
+Ref "FK_Generica_TipoTransaccionId": "modelo"."Generica"."TipoTransaccionId" > "modelo"."TipoTransaccion"."Id"
+Ref "FK_Subgenerica_GenericaId": "modelo"."Subgenerica"."GenericaId" > "modelo"."Generica"."Id"
+Ref "FK_SubgenericaDetalle_SubgenericaId": "modelo"."SubgenericaDetalle"."SubgenericaId" > "modelo"."Subgenerica"."Id"
+Ref "FK_Lote_Usuario": "integracion"."Lote"."CreadoPorUsuarioId" > "seguridad"."Usuario"."Id"
+Ref "FK_Consulta_Servicio": "integracion"."Consulta"."ServicioId" > "integracion"."Servicio"."Id"
+Ref "FK_Intento_Documento": "integracion"."Intento"."DocumentoId" > "integracion"."Documento"."Id"
+Ref "FK_Especifica_SubgenericaDetalleId": "modelo"."Especifica"."SubgenericaDetalleId" > "modelo"."SubgenericaDetalle"."Id"
+Ref "FK_Cambio_Usuario": "auditoria"."Cambio"."UsuarioId" > "seguridad"."Usuario"."Id"
+Ref "FK_EspecificaDetalle_EspecificaId": "modelo"."EspecificaDetalle"."EspecificaId" > "modelo"."Especifica"."Id"
+Ref "FK_Observacion_Documento": "integracion"."ObservacionDato"."DocumentoId" > "integracion"."Documento"."Id"
+Ref "FK_Rubro_FuenteFinanciamientoId": "modelo"."Rubro"."FuenteFinanciamientoId" > "modelo"."FuenteFinanciamiento"."Id"
+Ref "FK_TipoRecurso_RubroId": "modelo"."TipoRecurso"."RubroId" > "modelo"."Rubro"."Id"
+Ref "FK_Carga_Usuario": "auditoria"."CargaDocumento"."UsuarioId" > "seguridad"."Usuario"."Id"
+Ref "FK_Trabajo_LoteId": "integracion"."Trabajo"."LoteId" > "integracion"."Lote"."Id"
+Ref "FK_Trabajo_ConsultaId": "integracion"."Trabajo"."ConsultaId" > "integracion"."Consulta"."Id"
+Ref "FK_SecuenciaFuncional_ContextoEjecutoraId": "modelo"."SecuenciaFuncional"."ContextoEjecutoraId" > "modelo"."ContextoEjecutora"."Id"
+Ref "FK_Meta_SecuenciaFuncionalId": "modelo"."Meta"."SecuenciaFuncionalId" > "modelo"."SecuenciaFuncional"."Id"
+Ref "FK_Meta_FinalidadId": "modelo"."Meta"."FinalidadId" > "modelo"."Finalidad"."Id"
+Ref "FK_Meta_UnidadMedidaId": "modelo"."Meta"."UnidadMedidaId" > "modelo"."UnidadMedida"."Id"
+Ref "FK_Intento_TrabajoId": "integracion"."Intento"."TrabajoId" > "integracion"."Trabajo"."Id"
+Ref "FK_Provincia_DepartamentoId": "modelo"."Provincia"."DepartamentoId" > "modelo"."Departamento"."Id"
+Ref "FK_Distrito_ProvinciaId": "modelo"."Distrito"."ProvinciaId" > "modelo"."Provincia"."Id"
+Ref "FK_Documento_ConsultaId": "integracion"."Documento"."ConsultaId" > "integracion"."Consulta"."Id"
+Ref "FK_modelo_Gasto_Origen": "datos"."Gasto"."Id" - "modelo"."Gasto"."Id"
+Ref "FK_Documento_IntentoId": "integracion"."Documento"."IntentoId" > "integracion"."Intento"."Id"
+Ref "FK_Gasto_MetaId": "modelo"."Gasto"."MetaId" > "modelo"."Meta"."Id"
+Ref "FK_Gasto_ProgramaFuncionalId": "modelo"."Gasto"."ProgramaFuncionalId" > "modelo"."ProgramaFuncional"."Id"
+Ref "FK_Gasto_ProgramaPresupuestalId": "modelo"."Gasto"."ProgramaPresupuestalId" > "modelo"."ProgramaPresupuestal"."Id"
+Ref "FK_Gasto_CategoriaGastoId": "modelo"."Gasto"."CategoriaGastoId" > "modelo"."CategoriaGasto"."Id"
+Ref "FK_Fuente_DocumentoActual": "integracion"."Consulta".("Id", "DocumentoActualId") > "integracion"."Documento".("ConsultaId", "Id")
+Ref "FK_Gasto_EspecificaDetalleId": "modelo"."Gasto"."EspecificaDetalleId" > "modelo"."EspecificaDetalle"."Id"
+Ref "FK_Gasto_TipoRecursoId": "modelo"."Gasto"."TipoRecursoId" > "modelo"."TipoRecurso"."Id"
+Ref "FK_Gasto_ProyectoId": "modelo"."Gasto"."ProyectoId" > "modelo"."Proyecto"."Id"
+Ref "FK_Gasto_ProyectoSNIPId": "modelo"."Gasto"."ProyectoSNIPId" > "modelo"."ProyectoSNIP"."Id"
+Ref "FK_datos_Gasto_DocumentoId": "datos"."Gasto"."DocumentoId" > "integracion"."Documento"."Id"
+Ref "FK_Gasto_ComponenteId": "modelo"."Gasto"."ComponenteId" > "modelo"."Componente"."Id"
+Ref "FK_Gasto_DistritoId": "modelo"."Gasto"."DistritoId" > "modelo"."Distrito"."Id"
+Ref "FK_modelo_Gasto_TipoActProy": "modelo"."Gasto"."TipoActProyId" > "catalogo"."TipoActProy"."Id"
+
+TableGroup Sistema [color: #2563EB, note: 'Usuarios, roles y configuracion del servicio.'] {
+  "integracion"."Servicio"
+  "seguridad"."Rol"
+  "seguridad"."Usuario"
+}
+
+TableGroup Integracion_y_cola [color: #0F766E, note: 'Lotes, consultas, trabajos e intentos de descarga.'] {
+  "integracion"."Consulta"
+  "integracion"."Intento"
+  "integracion"."Lote"
+  "integracion"."Trabajo"
+}
+
+TableGroup XML_y_calidad [color: #EA580C, note: 'Original recibido, detalle de 39 campos y observaciones.'] {
+  "datos"."Gasto"
+  "integracion"."Documento"
+  "integracion"."ObservacionDato"
+}
+
+TableGroup Auditoria [color: #7C3AED, note: 'Bitacoras inmutables de cambios, cargas y accesos.'] {
+  "auditoria"."Cambio"
+  "auditoria"."CargaDocumento"
+  "seguridad"."EventoAcceso"
+}
+
+TableGroup Analisis [color: #0369A1, note: 'Mediciones de tiempos, rendimiento y concurrencia por intento.'] {
+  "analisis"."MetricaIntento"
+}
+
+TableGroup Catalogo [color: #475569, note: 'Valores permitidos del tipo de actividad o proyecto.'] {
+  "catalogo"."TipoActProy"
+}
+
+TableGroup Modelo_gasto [color: #166534, note: 'Hecho normalizado con la misma identidad que el detalle XML.'] {
+  "modelo"."Gasto"
+}
+
+TableGroup Modelo_instituciones [color: #0284C7, note: 'Gobierno, sector, pliego y ejecutora por ejercicio.'] {
+  "modelo"."ContextoEjecutora"
+  "modelo"."Ejecutora"
+  "modelo"."NivelGobierno"
+  "modelo"."Pliego"
+  "modelo"."Sector"
+  "modelo"."SubtipoGobierno"
+}
+
+TableGroup Modelo_presupuesto [color: #0D9488, note: 'Funcion, programas y categoria de gasto.'] {
+  "modelo"."CategoriaGasto"
+  "modelo"."Funcion"
+  "modelo"."ProgramaFuncional"
+  "modelo"."ProgramaPresupuestal"
+}
+
+TableGroup Modelo_clasificadores [color: #4F46E5, note: 'Jerarquia del clasificador de gasto.'] {
+  "modelo"."Especifica"
+  "modelo"."EspecificaDetalle"
+  "modelo"."Generica"
+  "modelo"."Subgenerica"
+  "modelo"."SubgenericaDetalle"
+  "modelo"."TipoTransaccion"
+}
+
+TableGroup Modelo_financiamiento [color: #B45309, note: 'Fuente, rubro y tipo de recurso.'] {
+  "modelo"."FuenteFinanciamiento"
+  "modelo"."Rubro"
+  "modelo"."TipoRecurso"
+}
+
+TableGroup Modelo_proyectos_y_metas [color: #BE185D, note: 'Proyecto, componente, finalidad, metas y unidad de medida opcional.'] {
+  "modelo"."Componente"
+  "modelo"."Finalidad"
+  "modelo"."Meta"
+  "modelo"."Proyecto"
+  "modelo"."ProyectoSNIP"
+  "modelo"."SecuenciaFuncional"
+  "modelo"."UnidadMedida"
+}
+
+TableGroup Modelo_ubicaciones [color: #4338CA, note: 'Departamento, provincia y distrito.'] {
+  "modelo"."Departamento"
+  "modelo"."Distrito"
+  "modelo"."Provincia"
+}

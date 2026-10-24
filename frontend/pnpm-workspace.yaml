@@ -1,0 +1,3 @@
+storeDir: ../.runtime/pnpm-store
+cacheDir: ../.runtime/pnpm-cache
+managePackageManagerVersions: false

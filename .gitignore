@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.runtime/
+.coverage
+*.egg-info/
+.tools/
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+.env.*
+!.env.example
+*.bak
+*.mdf
+*.ldf
+*.log
