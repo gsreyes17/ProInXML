@@ -23,6 +23,7 @@ const preview = ref<Preview | null>(null);
 const confirmation = ref("");
 const reason = ref("");
 const busy = ref(false);
+const normalizingId = ref<number | null>(null);
 const error = ref("");
 const message = ref("");
 const filters = [
@@ -122,17 +123,40 @@ async function remove() {
     busy.value = false;
   }
 }
+async function rebuild(id: number) {
+  busy.value = true;
+  normalizingId.value = id;
+  error.value = "";
+  message.value = "";
+  try {
+    const result = await api<{
+      filas_crudas: number;
+      filas_modelo_antes: number;
+      filas_modelo_despues: number;
+    }>("/mantenimiento/normalizar", {
+      method: "POST",
+      body: JSON.stringify({ documento_id: id }),
+    });
+    message.value = `Documento #${id}: ${number(result.filas_crudas)} filas XML conservadas y ${number(result.filas_modelo_despues)} filas en el modelo (antes: ${number(result.filas_modelo_antes)}). La operación quedó registrada en auditoría.`;
+    await explorer.value?.reload();
+  } catch (failure) {
+    error.value = (failure as Error).message;
+  } finally {
+    normalizingId.value = null;
+    busy.value = false;
+  }
+}
 </script>
 
 <template>
   <section class="maintenance-page">
     <div class="card maintenance-intro">
       <div>
-        <h2>Limpieza del laboratorio</h2>
+        <h2>Mantenimiento de datos</h2>
         <p>
-          Elimina un documento o vacía todas las cargas para repetir las
-          pruebas. Se conservan usuarios, roles, configuración, métricas y toda
-          la auditoría.
+          Reconstruye el modelo de un documento a partir de sus filas XML
+          guardadas, sin volver a descargarlo ni cambiar el original. También
+          puedes eliminar un documento o vaciar las cargas para repetir pruebas.
         </p>
         <p class="subtle">
           La eliminación es definitiva. El sistema no permite limpiar mientras
@@ -170,7 +194,7 @@ async function remove() {
         'AnoEje',
         'SecEjec',
         'EstadoDocumento',
-        'HttpStatus',
+        'HTTPStatus',
         'RegistrosDetalle',
         'Observaciones',
         'Vigente',
@@ -181,7 +205,7 @@ async function remove() {
         AnoEje: 'Año',
         SecEjec: 'Ejecutora',
         EstadoDocumento: 'Estado',
-        HttpStatus: 'HTTP',
+        HTTPStatus: 'HTTP',
         RegistrosDetalle: 'Filas XML',
         Observaciones: 'Incidencias',
         Vigente: 'Actual',
@@ -198,6 +222,16 @@ async function remove() {
       <template #actions="{ row }"
         ><button class="row-action" @click="documentId = Number(row.Id)">
           Inspeccionar ↗</button
+        ><button
+          class="row-action"
+          :disabled="busy"
+          @click="rebuild(Number(row.Id))"
+        >
+          {{
+            normalizingId === Number(row.Id)
+              ? "Reconstruyendo…"
+              : "Reconstruir modelo"
+          }}</button
         ><button
           class="row-action danger-text"
           :disabled="busy"
@@ -222,7 +256,7 @@ async function remove() {
       <template v-if="preview">
         <p class="notice notice-error">{{ preview.nota }}</p>
         <p v-if="preview.documento" class="document-url">
-          {{ preview.documento.Url }}
+          {{ preview.documento.URL }}
         </p>
         <dl class="record-fields">
           <template v-for="(value, key) in preview.conteos" :key="key"

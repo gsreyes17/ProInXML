@@ -5,11 +5,11 @@ from itertools import islice
 import random
 from time import perf_counter_ns
 
-from app.db import insert_id, rows, transaction
-from app.locks import integration_lock
-from app.metrics import close_interrupted, timing
-from app.normalizer import acquire_document_lock, normalize_document
-from app.xml_reader import FIELDS, content_hash, iter_records
+from app.infrastructure.db import insert_id, rows, transaction
+from app.infrastructure.locks import integration_lock
+from app.integration.metrics import close_interrupted, timing
+from app.integration.normalizer import acquire_document_lock, normalize_document
+from app.domain.xml_reader import FIELDS, content_hash, iter_records
 
 
 class QualityError(ValueError):
@@ -53,7 +53,7 @@ def create_batch(name: str, sources: list[dict]) -> dict:
                 if found
                 else insert_id(
                     con,
-                    "INSERT integracion.Consulta(ServicioId,Url,AnoEje,NivelGobierno,SecEjec) VALUES(?,?,?,?,?)",
+                    "INSERT integracion.Consulta(ServicioId,URL,AnoEje,NivelGobierno,SecEjec) VALUES(?,?,?,?,?)",
                     service[0],
                     source["url"],
                     *key,
@@ -62,7 +62,7 @@ def create_batch(name: str, sources: list[dict]) -> dict:
             already = bool(found and found[1] and found[2])
             loaded += int(already)
             con.execute(
-                "INSERT integracion.Trabajo(LoteId,ConsultaId,Estado,DocumentoId,FinalizadoUtc) "
+                "INSERT integracion.Trabajo(LoteId,ConsultaId,Estado,DocumentoId,FinalizadoUTC) "
                 "VALUES(?,?,?,?,CASE WHEN ?=1 THEN SYSUTCDATETIME() END)",
                 batch_id,
                 source_id,
@@ -126,7 +126,7 @@ def save_response(job: dict, data: bytes, content_type: str, status: int) -> int
             )
         )
         con.execute(
-            "UPDATE integracion.Intento SET HttpStatus=?,DocumentoId=?,Etapa=N'Validacion' WHERE Id=?",
+            "UPDATE integracion.Intento SET HTTPStatus=?,DocumentoId=?,Etapa=N'Validacion' WHERE Id=?",
             status,
             document_id,
             job["IntentoId"],
@@ -170,7 +170,7 @@ def persist_records(job: dict, document_id: int, data: bytes, *, meter=None) -> 
     commit_started = None
     try:
         with transaction(actor="sistema", correlation=str(job["Token"])) as con:
-            with timing(meter, "EsperaSqlMs"):
+            with timing(meter, "EsperaSQLMs"):
                 integration_lock(con)
                 acquire_document_lock(con)
                 lock_job(con, job)
@@ -190,15 +190,13 @@ def persist_records(job: dict, document_id: int, data: bytes, *, meter=None) -> 
                 existing = {
                     r[0]
                     for r in con.execute(
-                        "SELECT Ordinal FROM datos.Gasto WHERE DocumentoId=?",
+                        "SELECT Ordinal FROM staging.Gasto WHERE DocumentoId=?",
                         document_id,
                     )
                 }
 
                 def tracked_records():
-                    for record in iter_records(
-                        data, source, observations, accept_quality_errors=True
-                    ):
+                    for record in iter_records(data, source, observations):
                         if meter is not None:
                             meter.read += 1
                         yield record
@@ -206,7 +204,7 @@ def persist_records(job: dict, document_id: int, data: bytes, *, meter=None) -> 
                 records = tracked_records()
                 columns = ",".join(f"[{f}]" for f in FIELDS)
                 placeholders = ",".join("?" for _ in range(len(FIELDS) + 2))
-                statement = f"INSERT datos.Gasto(DocumentoId,Ordinal,{columns}) VALUES({placeholders})"
+                statement = f"INSERT staging.Gasto(DocumentoId,Ordinal,{columns}) VALUES({placeholders})"
                 cursor = con.cursor()
                 while True:
                     with timing(meter, "ValidacionMs"):
@@ -271,14 +269,14 @@ def persist_records(job: dict, document_id: int, data: bytes, *, meter=None) -> 
                 )
                 state = "Completado" if count else "CompletadoSinDatos"
                 con.execute(
-                    "UPDATE integracion.Trabajo SET Estado=?,FinalizadoUtc=SYSUTCDATETIME(),LeaseHastaUtc=NULL,Token=NULL,"
+                    "UPDATE integracion.Trabajo SET Estado=?,FinalizadoUTC=SYSUTCDATETIME(),LeaseHastaUTC=NULL,Token=NULL,"
                     "UltimoError=NULL,DocumentoId=? WHERE Id=?",
                     state,
                     document_id,
                     job["Id"],
                 )
                 con.execute(
-                    "UPDATE integracion.Intento SET Estado='Completado',Etapa=N'Finalizado',FinUtc=SYSUTCDATETIME() WHERE Id=?",
+                    "UPDATE integracion.Intento SET Estado='Completado',Etapa=N'Finalizado',FinUTC=SYSUTCDATETIME() WHERE Id=?",
                     job["IntentoId"],
                 )
             commit_started = perf_counter_ns()
@@ -315,8 +313,8 @@ def fail_job(
         integration_lock(con)
         lock_job(con, job)
         con.execute(
-            "UPDATE integracion.Intento SET Estado='Error',Etapa=?,FinUtc=SYSUTCDATETIME(),"
-            "HttpStatus=COALESCE(?,HttpStatus),Error=? WHERE Id=?",
+            "UPDATE integracion.Intento SET Estado='Error',Etapa=?,FinUTC=SYSUTCDATETIME(),"
+            "HTTPStatus=COALESCE(?,HTTPStatus),Error=? WHERE Id=?",
             stage,
             status,
             error,
@@ -331,9 +329,9 @@ def fail_job(
         con.execute(
             "UPDATE integracion.Trabajo SET "
             "Estado=CASE WHEN ?=1 AND Intentos<MaxIntentos THEN 'Pendiente' ELSE 'Fallido' END,"
-            "ProximoIntentoUtc=DATEADD(second,?,SYSUTCDATETIME()),"
-            "FinalizadoUtc=CASE WHEN ?=1 AND Intentos<MaxIntentos THEN NULL ELSE SYSUTCDATETIME() END,"
-            "LeaseHastaUtc=NULL,Token=NULL,UltimoError=? WHERE Id=?",
+            "ProximoIntentoUTC=DATEADD(second,?,SYSUTCDATETIME()),"
+            "FinalizadoUTC=CASE WHEN ?=1 AND Intentos<MaxIntentos THEN NULL ELSE SYSUTCDATETIME() END,"
+            "LeaseHastaUTC=NULL,Token=NULL,UltimoError=? WHERE Id=?",
             int(retryable),
             delay,
             int(retryable),
@@ -362,8 +360,8 @@ def schedule_again(job_id: int, *, force=False):
             )
         # No se agrega un indicador de fuerza: solo se encolan las revisiones solicitadas.
         con.execute(
-            "UPDATE integracion.Trabajo SET Estado='Pendiente',Intentos=0,ProximoIntentoUtc=SYSUTCDATETIME(),"
-            "FinalizadoUtc=NULL,LeaseHastaUtc=NULL,Token=NULL,UltimoError=NULL WHERE Id=?",
+            "UPDATE integracion.Trabajo SET Estado='Pendiente',Intentos=0,ProximoIntentoUTC=SYSUTCDATETIME(),"
+            "FinalizadoUTC=NULL,LeaseHastaUTC=NULL,Token=NULL,UltimoError=NULL WHERE Id=?",
             job_id,
         )
     return {

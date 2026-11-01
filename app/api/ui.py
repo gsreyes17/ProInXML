@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 SCREENS = {
     "login",
     "seguimiento",

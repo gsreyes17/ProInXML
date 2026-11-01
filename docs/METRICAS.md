@@ -12,14 +12,14 @@ Cada intento nuevo crea una fila en `analisis.MetricaIntento`. Las duraciones se
 | --- | --- |
 | `DescargaMs` | Creación del cliente HTTP, conexión, respuesta, lectura completa del cuerpo y cierre; también se mide si falla |
 | `OriginalMs` | Huella, compresión y transacción que conserva el original; incluye sus esperas SQL y confirmación |
-| `EsperaSqlMs` | Adquisición de bloqueos de integración, normalización, trabajo y consulta en la transacción de detalle |
+| `EsperaSQLMs` | Adquisición de bloqueos de integración, normalización, trabajo y consulta en la transacción de detalle |
 | `ValidacionMs` | Lectura de Items y validación del contrato, acumulada por bloques de hasta 500 filas |
 | `InsercionMs` | Preparación de valores e inserción de los bloques del detalle mediante ODBC |
 | `NormalizacionMs` | Ejecución de la normalización del documento en SQL Server |
 | `ConfirmacionMs` | Confirmación y cierre de la transacción de detalle; no incluye la confirmación del original |
 | `TotalMs` | Tiempo desde que el worker comienza el intento hasta preparar la medición final, incluidas tareas administrativas y gestión del fallo |
 
-El total no tiene que coincidir con la suma de las fases: también hay conexiones SQL, consultas de metadatos, observaciones, publicación, auditoría y persistencia intermedia de métricas. La espera del trabajo antes de ser tomado, el backoff entre reintentos y la pausa del circuito no son fases de ese intento. `EsperaSqlMs` no es un diagnóstico de todos los bloqueos internos del motor; una espera durante una sentencia puede estar incluida en inserción, normalización u original.
+El total no tiene que coincidir con la suma de las fases: también hay conexiones SQL, consultas de metadatos, observaciones, publicación, auditoría y persistencia intermedia de métricas. La espera del trabajo antes de ser tomado, el backoff entre reintentos y la pausa del circuito no son fases de ese intento. `EsperaSQLMs` no es un diagnóstico de todos los bloqueos internos del motor; una espera durante una sentencia puede estar incluida en inserción, normalización u original.
 
 Un guion (`NULL`) indica que no se ejecutó la fase; cero significa que se midió una duración muy pequeña. Promedio y P95 excluyen las mediciones interrumpidas/incompletas y los NULL de cada fase. P95 es el percentil 95 de la muestra, calculado mediante interpolación: requiere suficientes observaciones para sacar conclusiones. Los filtros pueden incluir tanto éxitos como errores; filtra por resultado para comparar un grupo homogéneo.
 
@@ -48,7 +48,7 @@ Los intentos anteriores a esta instrumentación siguen en Ejecución del servici
 Para actualizar otra instalación, detener API/worker, respaldar y aplicar:
 
 ```powershell
-.\uv.cmd run --frozen python scripts/aplicar_sql.py sql/005_metricas.sql
+.\.venv\Scripts\python.exe scripts/aplicar_sql.py sql/005_metricas.sql
 ```
 
 La migración es aditiva y repetible. La cuenta SQL de aplicación puede leer, insertar y actualizar métricas, y tiene denegado borrarlas o alterar su esquema.

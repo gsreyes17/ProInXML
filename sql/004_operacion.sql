@@ -1,60 +1,92 @@
 -- Cola, vistas operativas, auditoria inmutable y permisos de aplicacion.
 USE ProInXML;
 GO
-SET NOCOUNT ON;
+-- Las vistas del antiguo esquema ya no se usan despues de mover el detalle.
+IF OBJECT_ID(N'datos.vw_GastoXML',N'V') IS NOT NULL DROP VIEW datos.vw_GastoXML;
+IF OBJECT_ID(N'datos.GastoActual',N'V') IS NOT NULL DROP VIEW datos.GastoActual;
+IF SCHEMA_ID(N'datos') IS NOT NULL
+   AND NOT EXISTS(SELECT 1 FROM sys.objects WHERE schema_id=SCHEMA_ID(N'datos'))
+    EXEC(N'DROP SCHEMA datos');
 GO
 -- Consultas de datos vigentes y trazabilidad de intentos.
-CREATE OR ALTER VIEW datos.GastoActual AS
-SELECT g.* FROM datos.Gasto g JOIN integracion.Consulta c ON c.DocumentoActualId=g.DocumentoId;
+CREATE OR ALTER VIEW staging.GastoActual AS
+SELECT g.* FROM staging.Gasto g JOIN integracion.Consulta c ON c.DocumentoActualId=g.DocumentoId;
 GO
 CREATE OR ALTER VIEW modelo.GastoActual AS
-SELECT m.* FROM modelo.Gasto m JOIN datos.GastoActual g ON g.Id=m.Id;
+SELECT m.* FROM modelo.Gasto m JOIN staging.GastoActual g ON g.Id=m.Id;
 GO
-CREATE OR ALTER VIEW datos.vw_GastoXML AS
+CREATE OR ALTER VIEW staging.vw_GastoXML AS
 SELECT AnoEje,MesEje,IdNivelGobierno,Sub_tipo_gobierno,IdSector,IdPliego,IdEjecutora,SecEjec,
  Funcion,Programa,Programa_ppto,Categ_gasto,Tipo_transaccion,Generica,Subgenerica,Subgenerica_det,
  Especifica,Especifica_det,SecFunc,IdFuente,IdRubro,IdTipoRecurso,IdComponente,IdProyecto,TipoActProy,
  IdMeta,IdFinalidad,IdProyectoSNIP,Departamento,Provincia,Distrito,Unidad_Medida,
- PIA,PIM,Certificado,CompAnual,AtencionCompMensual,Devengado,Girado FROM datos.GastoActual;
+ PIA,PIM,Certificado,CompAnual,AtencionCompMensual,Devengado,Girado FROM staging.GastoActual;
 GO
 CREATE OR ALTER VIEW reportes.EjecucionServicio AS
-SELECT a.Id,a.TrabajoId,t.LoteId,t.ConsultaId,a.Numero,a.Estado,a.Etapa,a.HttpStatus,
- a.InicioUtc,a.FinUtc,DATEDIFF_BIG(millisecond,a.InicioUtc,COALESCE(a.FinUtc,SYSUTCDATETIME())) AS DuracionMs,
- a.UrlSolicitada,a.DocumentoId,a.Error,a.RegistrosLeidos,a.RegistrosInsertados,a.RegistrosReutilizados,
- a.RegistrosRechazados,a.Observaciones,a.CreadoUtc FROM integracion.Intento a
+SELECT a.Id,a.TrabajoId,t.LoteId,t.ConsultaId,a.Numero,a.Estado,a.Etapa,a.HTTPStatus,
+ a.InicioUTC,a.FinUTC,DATEDIFF_BIG(millisecond,a.InicioUTC,COALESCE(a.FinUTC,SYSUTCDATETIME())) AS DuracionMs,
+ a.URLSolicitada,a.DocumentoId,a.Error,a.RegistrosLeidos,a.RegistrosInsertados,a.RegistrosReutilizados,
+ a.RegistrosRechazados,a.Observaciones FROM integracion.Intento a
  JOIN integracion.Trabajo t ON t.Id=a.TrabajoId;
 GO
 -- Toma atomica de trabajos y recuperacion de leases vencidos.
 CREATE OR ALTER PROCEDURE integracion.TomarTrabajo @LoteId bigint=NULL AS
 BEGIN
- SET NOCOUNT ON;
- SET XACT_ABORT ON;
- BEGIN TRANSACTION;
- DECLARE @Ahora datetime2(3)=SYSUTCDATETIME();
- DECLARE @tomado TABLE(Id bigint,ConsultaId bigint,Intentos int,Token uniqueidentifier);
- -- Un corte no consume el presupuesto de errores: el intento queda registrado como interrumpido.
- DECLARE @vencidos TABLE(Id bigint);
- UPDATE t WITH(ROWLOCK,READPAST) SET Estado='Pendiente',Intentos=CASE WHEN Intentos>0 THEN Intentos-1 ELSE 0 END,
- Token=NULL,LeaseHastaUtc=NULL,ProximoIntentoUtc=@Ahora,UltimoError=N'Lease vencido; trabajo recuperado'
- OUTPUT inserted.Id INTO @vencidos FROM integracion.Trabajo t
- WHERE Estado='EnCurso' AND LeaseHastaUtc<@Ahora;
- UPDATE a SET Estado='Interrumpido',FinUtc=@Ahora,Error=N'Worker interrumpido: lease vencido'
- FROM integracion.Intento a JOIN @vencidos v ON v.Id=a.TrabajoId WHERE a.Estado='EnCurso';
- ;WITH siguiente AS(
- SELECT TOP(1) * FROM integracion.Trabajo WITH(UPDLOCK,READPAST,ROWLOCK)
- WHERE Estado='Pendiente' AND Intentos<MaxIntentos AND ProximoIntentoUtc<=@Ahora
- AND (@LoteId IS NULL OR LoteId=@LoteId)
- ORDER BY ProximoIntentoUtc,Id)
- UPDATE siguiente SET Estado='EnCurso',Intentos=Intentos+1,Token=NEWID(),
- LeaseHastaUtc=DATEADD(minute,10,@Ahora),FinalizadoUtc=NULL
- OUTPUT inserted.Id,inserted.ConsultaId,inserted.Intentos,inserted.Token INTO @tomado;
- INSERT integracion.Intento(TrabajoId,Numero,UrlSolicitada,Etapa)
- SELECT t.Id,COALESCE((SELECT MAX(a.Numero) FROM integracion.Intento a WHERE a.TrabajoId=t.Id),0)+1,c.Url,N'Descarga'
- FROM @tomado t JOIN integracion.Consulta c ON c.Id=t.ConsultaId;
- SELECT t.*,w.LoteId,a.Id AS IntentoId,c.Url,c.AnoEje,c.NivelGobierno,c.SecEjec FROM @tomado t
- JOIN integracion.Trabajo w ON w.Id=t.Id
- JOIN integracion.Consulta c ON c.Id=t.ConsultaId JOIN integracion.Intento a ON a.TrabajoId=t.Id AND a.Estado='EnCurso';
- COMMIT;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRANSACTION;
+
+    DECLARE @Ahora datetime2(3)=SYSUTCDATETIME();
+    DECLARE @tomado TABLE(Id bigint,ConsultaId bigint,Intentos int,Token uniqueidentifier);
+    DECLARE @vencidos TABLE(Id bigint);
+
+    -- Recuperar leases vencidos sin consumir un intento de error.
+    UPDATE t WITH(ROWLOCK,READPAST)
+    SET Estado='Pendiente',
+        Intentos=CASE WHEN Intentos>0 THEN Intentos-1 ELSE 0 END,
+        Token=NULL,LeaseHastaUTC=NULL,ProximoIntentoUTC=@Ahora,
+        UltimoError=N'Lease vencido; trabajo recuperado'
+    OUTPUT inserted.Id INTO @vencidos
+    FROM integracion.Trabajo t
+    WHERE Estado='EnCurso' AND LeaseHastaUTC<@Ahora;
+
+    UPDATE a
+    SET Estado='Interrumpido',FinUTC=@Ahora,
+        Error=N'Worker interrumpido: lease vencido'
+    FROM integracion.Intento a
+    JOIN @vencidos v ON v.Id=a.TrabajoId
+    WHERE a.Estado='EnCurso';
+
+    -- Reclamar un trabajo pendiente de forma atomica.
+    WITH siguiente AS (
+        SELECT TOP(1) *
+        FROM integracion.Trabajo WITH(UPDLOCK,READPAST,ROWLOCK)
+        WHERE Estado='Pendiente' AND Intentos<MaxIntentos
+          AND ProximoIntentoUTC<=@Ahora
+          AND (@LoteId IS NULL OR LoteId=@LoteId)
+        ORDER BY ProximoIntentoUTC,Id
+    )
+    UPDATE siguiente
+    SET Estado='EnCurso',Intentos=Intentos+1,Token=NEWID(),
+        LeaseHastaUTC=DATEADD(minute,10,@Ahora),FinalizadoUTC=NULL
+    OUTPUT inserted.Id,inserted.ConsultaId,inserted.Intentos,inserted.Token
+    INTO @tomado;
+
+    INSERT integracion.Intento(TrabajoId,Numero,URLSolicitada,Etapa)
+    SELECT t.Id,
+           COALESCE((SELECT MAX(a.Numero) FROM integracion.Intento a WHERE a.TrabajoId=t.Id),0)+1,
+           c.URL,N'Descarga'
+    FROM @tomado t
+    JOIN integracion.Consulta c ON c.Id=t.ConsultaId;
+
+    SELECT t.Id,t.ConsultaId,t.Intentos,t.Token,
+           w.LoteId,a.Id AS IntentoId,c.URL,c.AnoEje,c.NivelGobierno,c.SecEjec
+    FROM @tomado t
+    JOIN integracion.Trabajo w ON w.Id=t.Id
+    JOIN integracion.Consulta c ON c.Id=t.ConsultaId
+    JOIN integracion.Intento a ON a.TrabajoId=t.Id AND a.Estado='EnCurso';
+
+    COMMIT;
 END;
 GO
 -- Auditoria fila a fila solamente donde aporta valor; el volumen va a CargaDocumento.
@@ -62,14 +94,14 @@ DECLARE @schema sysname,@table sysname,@sql nvarchar(max),@projection nvarchar(m
 DECLARE tablas CURSOR LOCAL FAST_FORWARD FOR
 SELECT s.name,t.name FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id
 WHERE (s.name='integracion' AND t.name IN ('Servicio','Lote','Consulta','Trabajo'))
- OR s.name='catalogo' OR (s.name='seguridad' AND t.name='Usuario');
+ OR (s.name='seguridad' AND t.name='Usuario');
 OPEN tablas;FETCH NEXT FROM tablas INTO @schema,@table;
 WHILE @@FETCH_STATUS=0
 BEGIN
- SET @projection=CASE WHEN @schema='seguridad' THEN N'x.Id,x.NombreUsuario,x.NombreCompleto,x.RolId,x.Activo,x.CreadoUtc' ELSE N'x.*' END;
+ SET @projection=CASE WHEN @schema='seguridad' THEN N'x.Id,x.NombreUsuario,x.NombreCompleto,x.RolId,x.Activo,x.CreadoUTC' ELSE N'x.*' END;
  SET @sql=N'CREATE OR ALTER TRIGGER '+QUOTENAME(@schema)+N'.'+QUOTENAME(N'tr_Audit_'+@table)+N'
  ON '+QUOTENAME(@schema)+N'.'+QUOTENAME(@table)+N' AFTER INSERT,UPDATE,DELETE AS BEGIN SET NOCOUNT ON;
- INSERT auditoria.Cambio(Tabla,RegistroId,Operacion,UsuarioId,Actor,Rol,LoginSql,Correlacion,Antes,Despues)
+ INSERT auditoria.Cambio(Tabla,RegistroId,Operacion,UsuarioId,Actor,Rol,LoginSQL,Correlacion,Antes,Despues)
  SELECT N'''+@schema+N'.'+@table+N''',COALESCE(i.Id,d.Id),
  CASE WHEN d.Id IS NULL THEN ''I'' WHEN i.Id IS NULL THEN ''D'' ELSE ''U'' END,
  TRY_CONVERT(bigint,SESSION_CONTEXT(N''usuario_id'')),
@@ -95,18 +127,17 @@ BEGIN THROW 50002,'Los eventos de acceso no admiten cambios ni eliminaciones.',1
 GO
 -- Permisos de la cuenta de aplicacion; las bitacoras son inmutables.
 GRANT SELECT,INSERT,UPDATE,DELETE ON SCHEMA::integracion TO proinxml_app;
-GRANT SELECT,INSERT,UPDATE,DELETE ON SCHEMA::datos TO proinxml_app;
+GRANT SELECT,INSERT,UPDATE,DELETE ON SCHEMA::staging TO proinxml_app;
 GRANT SELECT,INSERT,UPDATE,DELETE ON SCHEMA::modelo TO proinxml_app;
 GRANT SELECT,INSERT,UPDATE ON seguridad.Usuario TO proinxml_app;
 GRANT SELECT ON seguridad.Rol TO proinxml_app;
 GRANT SELECT,INSERT ON seguridad.EventoAcceso TO proinxml_app;
-GRANT SELECT ON SCHEMA::catalogo TO proinxml_app;
 GRANT SELECT,INSERT ON SCHEMA::auditoria TO proinxml_app;
 GRANT SELECT ON SCHEMA::reportes TO proinxml_app;
 DENY UPDATE,DELETE ON SCHEMA::auditoria TO proinxml_app;
 DENY UPDATE,DELETE ON seguridad.EventoAcceso TO proinxml_app;
 DENY ALTER ON SCHEMA::integracion TO proinxml_app;
-DENY ALTER ON SCHEMA::datos TO proinxml_app;
+DENY ALTER ON SCHEMA::staging TO proinxml_app;
 DENY ALTER ON SCHEMA::modelo TO proinxml_app;
 DENY ALTER ON SCHEMA::seguridad TO proinxml_app;
 DENY ALTER ON SCHEMA::auditoria TO proinxml_app;

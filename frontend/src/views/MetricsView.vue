@@ -88,11 +88,11 @@ const labels = {
   Concurrencia: "Concurrencia",
   TotalMs: "Total",
   DescargaMs: "Descarga",
-  EsperaSqlMs: "Espera SQL",
+  EsperaSQLMs: "Espera SQL",
   NormalizacionMs: "Normalización",
   RegistrosInsertados: "Filas nuevas",
   RegistrosLeidos: "Filas leídas",
-  HttpStatus: "HTTP",
+  HTTPStatus: "HTTP",
 };
 </script>
 
@@ -241,7 +241,7 @@ const labels = {
           Mayor promedio observado: <strong>{{ bottleneck.Nombre }}</strong
           >.
           {{
-            bottleneck.Campo === "EsperaSqlMs"
+            bottleneck.Campo === "EsperaSQLMs"
               ? "Los workers esperan los bloqueos de persistencia; aumentar descargas puede aumentar esta espera."
               : "Compara documentos de tamaños similares antes de atribuir la diferencia a la concurrencia."
           }}
@@ -327,10 +327,10 @@ const labels = {
         'LoteId',
         'Estado',
         'Concurrencia',
-        'HttpStatus',
+        'HTTPStatus',
         'RegistrosInsertados',
         'DescargaMs',
-        'EsperaSqlMs',
+        'EsperaSQLMs',
         'NormalizacionMs',
         'TotalMs',
       ]"
@@ -358,7 +358,7 @@ const labels = {
             {{
               String(key).endsWith("Ms")
                 ? duration(value)
-                : String(key).endsWith("Utc")
+                : String(key).endsWith("UTC")
                   ? date(value)
                   : text(value)
             }}

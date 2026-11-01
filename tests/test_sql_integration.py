@@ -13,17 +13,18 @@ from unittest.mock import patch
 from xml.etree.ElementTree import ParseError
 
 from fastapi.testclient import TestClient
-from app import db, service
-from app.main import app
-from app.security import current_user, password_hash, sessions
-from app.xml_reader import FIELDS, canonical_source
+from app.infrastructure import db
+from app.integration import service
+from app.api.main import app
+from app.api.security import current_user, password_hash, sessions
+from app.domain.xml_reader import FIELDS, canonical_source
 
 URL = "http://s3.mef.gob.pe/servicios/WSPCM/SG/gastopipsg-old.asmx/ObtenerDataGastoPIP_old_2?anoEje=2020&nivelGobierno=E&sec_ejec=3"
 ENABLED = os.getenv("PROINXML_RUN_SQL_TESTS") == "1"
 
 
 @unittest.skipUnless(ENABLED, "SQL opcional: PROINXML_RUN_SQL_TESTS=1")
-class SqlIntegrationTests(unittest.TestCase):
+class SQLIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.context = db.transaction(actor="sistema")
         self.con = self.context.__enter__()
@@ -60,13 +61,13 @@ class SqlIntegrationTests(unittest.TestCase):
         self.patchers = [
             patch(module + ".transaction", scoped_transaction)
             for module in (
-                "app.service",
-                "app.main",
-                "app.explorer",
-                "app.security",
-                "app.maintenance",
-                "app.metrics",
-                "app.analysis",
+                "app.integration.service",
+                "app.api.main",
+                "app.api.explorer",
+                "app.api.security",
+                "app.api.maintenance",
+                "app.integration.metrics",
+                "app.api.analysis",
             )
         ]
         for p in self.patchers:
@@ -104,7 +105,7 @@ class SqlIntegrationTests(unittest.TestCase):
         if batch["ya_cargadas"]:
             service.schedule_again(job_id, force=True)
         self.con.execute(
-            "UPDATE integracion.Trabajo SET ProximoIntentoUtc=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
+            "UPDATE integracion.Trabajo SET ProximoIntentoUTC=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
             job_id,
         )
         job = service.claim_job()
@@ -123,14 +124,14 @@ class SqlIntegrationTests(unittest.TestCase):
         columns = ",".join("[" + n + "]" for n in FIELDS)
         original = list(
             self.con.execute(
-                f"SELECT Id,{columns} FROM datos.Gasto WHERE DocumentoId=? ORDER BY Id",
+                f"SELECT Id,{columns} FROM staging.Gasto WHERE DocumentoId=? ORDER BY Id",
                 doc,
             )
         )
         reconstructed = list(
             self.con.execute(
                 f"SELECT n.Id,{','.join('n.[' + n + ']' for n in FIELDS)} FROM modelo.GastoReconstruido n "
-                "JOIN datos.Gasto g ON g.Id=n.Id WHERE g.DocumentoId=? ORDER BY n.Id",
+                "JOIN staging.Gasto g ON g.Id=n.Id WHERE g.DocumentoId=? ORDER BY n.Id",
                 doc,
             )
         )
@@ -144,7 +145,7 @@ class SqlIntegrationTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM datos.Gasto WHERE DocumentoId=?", first
+                "SELECT COUNT(*) FROM staging.Gasto WHERE DocumentoId=?", first
             ).fetchone()[0],
             7,
         )
@@ -163,13 +164,13 @@ class SqlIntegrationTests(unittest.TestCase):
         self.assertNotEqual(first, third)
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM datos.GastoActual WHERE DocumentoId=?", first
+                "SELECT COUNT(*) FROM staging.GastoActual WHERE DocumentoId=?", first
             ).fetchone()[0],
             0,
         )
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM modelo.GastoActual m JOIN datos.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
+                "SELECT COUNT(*) FROM modelo.GastoActual m JOIN staging.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
                 third,
             ).fetchone()[0],
             7,
@@ -226,7 +227,7 @@ class SqlIntegrationTests(unittest.TestCase):
             service.persist_records(job, doc, invalid)
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM datos.Gasto WHERE DocumentoId=?", doc
+                "SELECT COUNT(*) FROM staging.Gasto WHERE DocumentoId=?", doc
             ).fetchone()[0],
             0,
         )
@@ -247,7 +248,7 @@ class SqlIntegrationTests(unittest.TestCase):
     def test_expired_lease_recovers_without_exhausting_error_budget(self):
         first = self.new_job()
         self.con.execute(
-            "UPDATE integracion.Trabajo SET LeaseHastaUtc=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=?",
+            "UPDATE integracion.Trabajo SET LeaseHastaUTC=DATEADD(minute,-1,SYSUTCDATETIME()) WHERE Id=?",
             first["Id"],
         )
         second = service.claim_job()
@@ -273,7 +274,7 @@ class SqlIntegrationTests(unittest.TestCase):
         doc, _ = self.ingest(data)
         self.assertIsNone(
             self.con.execute(
-                "SELECT Unidad_Medida FROM datos.Gasto WHERE DocumentoId=? AND Ordinal=1",
+                "SELECT Unidad_Medida FROM staging.Gasto WHERE DocumentoId=? AND Ordinal=1",
                 doc,
             ).fetchone()[0]
         )
@@ -292,7 +293,7 @@ class SqlIntegrationTests(unittest.TestCase):
             1,
         )
 
-    def test_invalid_type_is_retained_but_never_published(self):
+    def test_unknown_type_is_normalized_and_published(self):
         data = re.sub(
             rb"<TipoActProy>[23]</TipoActProy>",
             b"<TipoActProy>4</TipoActProy>",
@@ -300,39 +301,36 @@ class SqlIntegrationTests(unittest.TestCase):
             count=1,
         )
         job = self.new_job()
-        before = self.con.execute(
-            "SELECT DocumentoActualId FROM integracion.Consulta WHERE Id=?",
-            job["ConsultaId"],
-        ).fetchone()[0]
         doc = service.save_response(job, data, "text/xml", 200)
-        with self.assertRaises(service.QualityError):
-            service.persist_records(job, doc, data)
+        service.persist_records(job, doc, data)
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM datos.Gasto WHERE DocumentoId=?", doc
+                "SELECT COUNT(*) FROM staging.Gasto WHERE DocumentoId=?", doc
             ).fetchone()[0],
             7,
         )
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM modelo.Gasto m JOIN datos.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
+                "SELECT COUNT(*) FROM modelo.Gasto m JOIN staging.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
                 doc,
             ).fetchone()[0],
-            0,
+            7,
         )
         self.assertEqual(
             self.con.execute(
                 "SELECT DocumentoActualId FROM integracion.Consulta WHERE Id=?",
                 job["ConsultaId"],
             ).fetchone()[0],
-            before,
+            doc,
         )
         self.assertEqual(
             self.con.execute(
-                "SELECT Severidad FROM integracion.ObservacionDato WHERE DocumentoId=?",
+                "SELECT t.Codigo FROM modelo.Gasto m JOIN modelo.TipoActProy t ON t.Id=m.TipoActProyId "
+                "JOIN staging.Gasto g ON g.Id=m.Id "
+                "WHERE g.DocumentoId=? AND g.Ordinal=1",
                 doc,
             ).fetchone()[0],
-            "Error",
+            4,
         )
 
     def test_normalization_deduplicates_keys_without_merging_contexts_or_null_units(
@@ -355,7 +353,7 @@ class SqlIntegrationTests(unittest.TestCase):
         self.assert_reconstruction(doc)
         found = self.con.execute(
             "SELECT COUNT(*),COUNT(DISTINCT m.MetaId) FROM modelo.Gasto m "
-            "JOIN datos.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
+            "JOIN staging.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
             doc,
         ).fetchone()
         self.assertEqual(tuple(found), (600, 3))
@@ -387,22 +385,106 @@ class SqlIntegrationTests(unittest.TestCase):
             "CompletadoSinDatos",
         )
 
+    def test_manual_normalization_restores_model_without_changing_raw_data(self):
+        doc, _ = self.ingest()
+        original = list(
+            self.con.execute(
+                "SELECT Id,Ordinal,PIA FROM staging.Gasto WHERE DocumentoId=? ORDER BY Id",
+                doc,
+            )
+        )
+        saved_xml = tuple(
+            self.con.execute(
+                "SELECT Sha256,Respuesta FROM integracion.Documento WHERE Id=?", doc
+            ).fetchone()
+        )
+        self.con.execute(
+            "DELETE m FROM modelo.Gasto m JOIN staging.Gasto g ON g.Id=m.Id "
+            "WHERE g.DocumentoId=?",
+            doc,
+        )
+        response = self.client.post(
+            "/mantenimiento/normalizar", json={"documento_id": doc}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            (
+                response.json()["filas_crudas"],
+                response.json()["filas_modelo_antes"],
+                response.json()["filas_modelo_despues"],
+            ),
+            (7, 0, 7),
+        )
+        self.assertEqual(
+            list(
+                self.con.execute(
+                    "SELECT Id,Ordinal,PIA FROM staging.Gasto WHERE DocumentoId=? ORDER BY Id",
+                    doc,
+                )
+            ),
+            original,
+        )
+        self.assertEqual(
+            tuple(
+                self.con.execute(
+                    "SELECT Sha256,Respuesta FROM integracion.Documento WHERE Id=?", doc
+                ).fetchone()
+            ),
+            saved_xml,
+        )
+        self.assert_reconstruction(doc)
+        self.assertEqual(
+            self.con.execute(
+                "SELECT COUNT(*) FROM auditoria.Cambio WHERE Tabla=N'integracion.Documento' "
+                "AND RegistroId=? AND JSON_VALUE(Despues,'$.accion')='NormalizarDocumentoManual'",
+                doc,
+            ).fetchone()[0],
+            1,
+        )
+
     def test_reconstruction_of_39_columns_and_no_bulk_row_audit(self):
         start = self.con.execute(
-            "SELECT COUNT(*) FROM auditoria.Cambio WHERE Tabla IN ('datos.Gasto','modelo.Gasto')"
+            "SELECT COUNT(*) FROM auditoria.Cambio WHERE Tabla IN ('staging.Gasto','modelo.Gasto')"
         ).fetchone()[0]
         doc, _ = self.ingest()
         self.assert_reconstruction(doc)
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM auditoria.Cambio WHERE Tabla IN ('datos.Gasto','modelo.Gasto')"
+                "SELECT COUNT(*) FROM auditoria.Cambio WHERE Tabla IN ('staging.Gasto','modelo.Gasto')"
             ).fetchone()[0],
             start,
         )
         self.assertEqual(
-            len(self.con.execute("SELECT TOP(0) * FROM datos.vw_GastoXML").description),
+            len(
+                self.con.execute("SELECT TOP(0) * FROM staging.vw_GastoXML").description
+            ),
             39,
         )
+
+    def test_year_and_month_belong_to_each_fact(self):
+        first, _ = self.ingest()
+        contexts = self.con.execute(
+            "SELECT COUNT(*) FROM modelo.ContextoEjecutora"
+        ).fetchone()[0]
+        second_source = canonical_source(URL.replace("anoEje=2020", "anoEje=2021"))
+        second_data = self.data.replace(
+            b"<AnoEje>2020</AnoEje>", b"<AnoEje>2021</AnoEje>"
+        )
+        second, _ = self.ingest(second_data, second_source)
+        self.assertEqual(
+            self.con.execute("SELECT COUNT(*) FROM modelo.ContextoEjecutora").fetchone()[0],
+            contexts,
+        )
+        for document, year in ((first, 2020), (second, 2021)):
+            self.assertEqual(
+                [tuple(row) for row in self.con.execute(
+                    "SELECT DISTINCT m.AnoEje,m.MesEje FROM modelo.Gasto m "
+                    "JOIN staging.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
+                    document,
+                )],
+                [(year, 0)],
+            )
+            self.assert_reconstruction(document)
 
     def test_explorers_return_pure_xml_and_trace_separately(self):
         doc, job = self.ingest()
@@ -421,8 +503,8 @@ class SqlIntegrationTests(unittest.TestCase):
         report = self.client.get(f"/reportes/ejecucion?trabajo_id={job['Id']}").json()[
             "registros"
         ][0]
-        self.assertEqual(report["HttpStatus"], 200)
-        self.assertIsNotNone(report["FinUtc"])
+        self.assertEqual(report["HTTPStatus"], 200)
+        self.assertIsNotNone(report["FinUTC"])
         self.assertEqual(report["RegistrosLeidos"], 7)
         jobs = self.client.get(f"/lotes/{job['LoteId']}/trabajos?estado=").json()
         self.assertEqual(len(jobs), 1)
@@ -439,7 +521,7 @@ class SqlIntegrationTests(unittest.TestCase):
 
     def process_measured_fixture(self, data=None, status=200, *, timeout=False):
         import httpx
-        from app.worker import process
+        from app.integration.worker import process
 
         self.require_validation_database()
         job = self.new_job()
@@ -455,7 +537,7 @@ class SqlIntegrationTests(unittest.TestCase):
             )
 
         with patch(
-            "app.worker.httpx.Client",
+            "app.integration.worker.httpx.Client",
             side_effect=lambda **kw: real_client(
                 transport=httpx.MockTransport(handler), **kw
             ),
@@ -487,7 +569,7 @@ class SqlIntegrationTests(unittest.TestCase):
         for field in (
             "DescargaMs",
             "OriginalMs",
-            "EsperaSqlMs",
+            "EsperaSQLMs",
             "ValidacionMs",
             "InsercionMs",
             "NormalizacionMs",
@@ -521,7 +603,7 @@ class SqlIntegrationTests(unittest.TestCase):
         job = self.process_measured_fixture(timeout=True)
         metric = self.metric(job)
         self.assertEqual(metric["Estado"], "Error")
-        self.assertIsNone(metric["HttpStatus"])
+        self.assertIsNone(metric["HTTPStatus"])
         self.assertEqual(metric["BytesRecibidos"], 0)
         self.assertIsNotNone(metric["DescargaMs"])
         self.assertIsNone(metric["NormalizacionMs"])
@@ -541,13 +623,13 @@ class SqlIntegrationTests(unittest.TestCase):
         self.assertIsNone(metric["NormalizacionMs"])
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM datos.Gasto WHERE DocumentoId=?",
+                "SELECT COUNT(*) FROM staging.Gasto WHERE DocumentoId=?",
                 metric["DocumentoId"],
             ).fetchone()[0],
             0,
         )
 
-    def test_metrics_quality_error_preserves_committed_detail(self):
+    def test_metrics_unknown_type_is_completed(self):
         data = re.sub(
             rb"<TipoActProy>[23]</TipoActProy>",
             b"<TipoActProy>4</TipoActProy>",
@@ -562,9 +644,9 @@ class SqlIntegrationTests(unittest.TestCase):
                 metric["RegistrosInsertados"],
                 metric["RegistrosNormalizados"],
             ),
-            ("Error", 7, 0),
+            ("Completado", 7, 7),
         )
-        self.assertIsNone(metric["NormalizacionMs"])
+        self.assertIsNotNone(metric["NormalizacionMs"])
         self.assertIsNotNone(metric["ConfirmacionMs"])
 
     def test_metrics_reused_document_is_not_new_throughput(self):
@@ -584,13 +666,13 @@ class SqlIntegrationTests(unittest.TestCase):
 
     def test_metrics_expired_lease_closes_partial_measurement(self):
         self.require_validation_database()
-        from app.metrics import AttemptMetrics
+        from app.integration.metrics import AttemptMetrics
 
         job = self.new_job()
         meter = AttemptMetrics(job, 20)
         meter.save()
         self.con.execute(
-            "UPDATE integracion.Trabajo SET LeaseHastaUtc=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
+            "UPDATE integracion.Trabajo SET LeaseHastaUTC=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
             job["Id"],
         )
         service.claim_job()
@@ -601,7 +683,7 @@ class SqlIntegrationTests(unittest.TestCase):
 
     def test_metrics_failure_does_not_fail_business_load(self):
         with patch(
-            "app.metrics.transaction",
+            "app.integration.metrics.transaction",
             side_effect=RuntimeError("Analisis no disponible"),
         ):
             with self.assertLogs("proinxml.metricas", level="WARNING"):
@@ -656,7 +738,7 @@ class SqlIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM datos.Gasto WHERE DocumentoId=?", first
+                "SELECT COUNT(*) FROM staging.Gasto WHERE DocumentoId=?", first
             ).fetchone()[0],
             0,
         )
@@ -707,11 +789,11 @@ class SqlIntegrationTests(unittest.TestCase):
             ).fetchone()
         )
         self.delete_with_preview()
-        from app.model_schema import ENTITIES
+        from app.domain.model_schema import ENTITIES
 
         for table in [
             "integracion.Documento",
-            "datos.Gasto",
+            "staging.Gasto",
             "modelo.Gasto",
             "integracion.ObservacionDato",
             "integracion.Intento",
@@ -791,7 +873,7 @@ class SqlIntegrationTests(unittest.TestCase):
         scope = {"alcance": "documento", "documento_id": doc}
         preview = self.client.post("/mantenimiento/vista-previa", json=scope).json()
         with patch(
-            "app.maintenance.prune_dimensions",
+            "app.api.maintenance.prune_dimensions",
             side_effect=RuntimeError("Fallo simulado al limpiar"),
         ):
             with self.assertRaisesRegex(RuntimeError, "Fallo simulado"):
@@ -806,7 +888,7 @@ class SqlIntegrationTests(unittest.TestCase):
                 )
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM datos.Gasto WHERE DocumentoId=?", doc
+                "SELECT COUNT(*) FROM staging.Gasto WHERE DocumentoId=?", doc
             ).fetchone()[0],
             7,
         )
@@ -837,7 +919,7 @@ class SqlIntegrationTests(unittest.TestCase):
         try:
             self.delete_with_preview()
             self.assertEqual(
-                self.con.execute("SELECT COUNT(*) FROM datos.Gasto").fetchone()[0], 0
+                self.con.execute("SELECT COUNT(*) FROM staging.Gasto").fetchone()[0], 0
             )
             self.assertEqual(
                 self.con.execute(
@@ -848,7 +930,52 @@ class SqlIntegrationTests(unittest.TestCase):
         finally:
             self.con.execute("REVERT")
 
-    def test_inspection_exposes_quality_value_and_rejected_response_as_text(self):
+    def test_audit_loads_inspects_empty_xml_and_preserves_deleted_history(self):
+        self.require_validation_database()
+        populated, _ = self.ingest()
+        data = b'<DataGasto xmlns="http://www.mef.gob.pe/"/>'
+        job = self.new_job()
+        empty = service.save_response(job, data, "text/xml", 200)
+        self.assertEqual(service.persist_records(job, empty, data), 0)
+
+        response = self.client.get(
+            f"/auditoria/cargas?documento_id={empty}&resultado=sin_datos"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        row = response.json()["registros"][0]
+        self.assertEqual(row["Resultado"], "Sin datos")
+        self.assertEqual(row["CantidadRegistros"], 0)
+        self.assertEqual(row["HTTPStatus"], 200)
+        self.assertEqual(row["URL"], self.source["url"])
+        self.assertTrue(row["DocumentoDisponible"])
+        self.assertEqual(
+            self.client.get(f"/documentos/{empty}").json()["original"]["texto"],
+            data.decode(),
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/auditoria/cargas?documento_id={populated}&resultado=sin_datos"
+            ).json()["total"],
+            0,
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/auditoria/cargas?documento_id={populated}&resultado=con_datos"
+            ).json()["registros"][0]["CantidadRegistros"],
+            7,
+        )
+
+        self.delete_with_preview(empty)
+        historical = self.client.get(
+            f"/auditoria/cargas?documento_id={empty}&resultado=eliminado"
+        ).json()["registros"][0]
+        self.assertEqual(historical["Id"], row["Id"])
+        self.assertEqual(historical["Resultado"], "Documento eliminado")
+        self.assertFalse(historical["DocumentoDisponible"])
+        self.assertIsNone(historical["URL"])
+        self.assertEqual(self.client.get(f"/documentos/{empty}").status_code, 404)
+
+    def test_inspection_exposes_unclassified_value_and_rejected_response_as_text(self):
         self.require_validation_database()
         data = re.sub(
             rb"<TipoActProy>[23]</TipoActProy>",
@@ -858,40 +985,13 @@ class SqlIntegrationTests(unittest.TestCase):
         )
         job = self.new_job()
         doc = service.save_response(job, data, "text/xml", 200)
-        with self.assertRaises(service.QualityError):
-            service.persist_records(job, doc, data)
-        service.fail_job(
-            job,
-            "Dato de calidad invalido",
-            retryable=False,
-            document_id=doc,
-            stage="Validacion",
-        )
-        listing = self.client.get("/documentos?calidad=rechazados").json()
+        service.persist_records(job, doc, data)
+        listing = self.client.get("/documentos?calidad=validos").json()
         self.assertIn(doc, [row["Id"] for row in listing["registros"]])
-        observation = self.client.get(
-            f"/observaciones?documento_id={doc}&severidad=Error"
-        ).json()["registros"][0]
-        detail = self.client.get(
-            f"/documentos/{doc}?ordinal={observation['OrdinalItem']}"
-        ).json()
+        detail = self.client.get(f"/documentos/{doc}?ordinal=1").json()
         self.assertEqual(detail["registro"]["TipoActProy"], 4)
         self.assertIn("<TipoActProy>4</TipoActProy>", detail["original"]["texto"])
-        self.assertIn(
-            doc,
-            [
-                row["Id"]
-                for row in self.client.get(
-                    "/documentos?calidad=con_observaciones"
-                ).json()["registros"]
-            ],
-        )
-        self.assertEqual(
-            self.client.get("/reportes/ejecucion?solo_fallos=true").json()["registros"][
-                0
-            ]["Estado"],
-            "Error",
-        )
+        self.assertEqual(self.client.get("/observaciones?documento_id=" + str(doc)).json()["total"], 0)
         job2 = self.new_job()
         html = b"<html><script>alert(1)</script>HTTP 500</html>"
         error_doc = service.save_response(job2, html, "text/html", 500)
@@ -997,7 +1097,7 @@ class SqlIntegrationTests(unittest.TestCase):
         service.fail_job(job, "Sin red", retryable=False)
         service.schedule_again(job["Id"])
         self.con.execute(
-            "UPDATE integracion.Trabajo SET ProximoIntentoUtc=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
+            "UPDATE integracion.Trabajo SET ProximoIntentoUTC=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
             job["Id"],
         )
         second = service.claim_job()
@@ -1011,7 +1111,7 @@ class SqlIntegrationTests(unittest.TestCase):
         report = self.client.get(f"/reportes/ejecucion?trabajo_id={job['Id']}").json()[
             "registros"
         ]
-        self.assertIsNone(report[0]["HttpStatus"])
+        self.assertIsNone(report[0]["HTTPStatus"])
 
     def test_four_transient_failures_finish_without_invented_http(self):
         job = self.new_job()
@@ -1024,13 +1124,13 @@ class SqlIntegrationTests(unittest.TestCase):
             self.assertEqual(state, "Pendiente" if number < 4 else "Fallido")
             if number < 4:
                 self.con.execute(
-                    "UPDATE integracion.Trabajo SET ProximoIntentoUtc=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
+                    "UPDATE integracion.Trabajo SET ProximoIntentoUTC=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id=?",
                     job["Id"],
                 )
                 job = service.claim_job()
         self.assertEqual(
             self.con.execute(
-                "SELECT COUNT(*) FROM integracion.Intento WHERE TrabajoId=? AND HttpStatus IS NULL",
+                "SELECT COUNT(*) FROM integracion.Intento WHERE TrabajoId=? AND HTTPStatus IS NULL",
                 job["Id"],
             ).fetchone()[0],
             4,
@@ -1045,7 +1145,7 @@ class ConcurrentQueueTests(unittest.TestCase):
     def test_twenty_downloads_record_real_sql_metrics(self):
         import httpx
         import secrets
-        from app.worker import process
+        from app.integration.worker import process
 
         with db.transaction() as con:
             while True:
@@ -1086,7 +1186,7 @@ class ConcurrentQueueTests(unittest.TestCase):
 
         try:
             with patch(
-                "app.worker.httpx.Client",
+                "app.integration.worker.httpx.Client",
                 side_effect=lambda **kw: real_client(
                     transport=httpx.MockTransport(handler), **kw
                 ),
@@ -1145,11 +1245,11 @@ class ConcurrentQueueTests(unittest.TestCase):
         finally:
             with db.transaction() as con:
                 con.execute(
-                    "UPDATE integracion.Intento SET Estado='Interrumpido',FinUtc=SYSUTCDATETIME() WHERE TrabajoId IN(SELECT Id FROM integracion.Trabajo WHERE LoteId=?) AND Estado='EnCurso'",
+                    "UPDATE integracion.Intento SET Estado='Interrumpido',FinUTC=SYSUTCDATETIME() WHERE TrabajoId IN(SELECT Id FROM integracion.Trabajo WHERE LoteId=?) AND Estado='EnCurso'",
                     batch["lote_id"],
                 )
                 con.execute(
-                    "UPDATE integracion.Trabajo SET Estado='Cancelado',Token=NULL,LeaseHastaUtc=NULL WHERE LoteId=? AND Estado IN('EnCurso','Pendiente')",
+                    "UPDATE integracion.Trabajo SET Estado='Cancelado',Token=NULL,LeaseHastaUTC=NULL WHERE LoteId=? AND Estado IN('EnCurso','Pendiente')",
                     batch["lote_id"],
                 )
 
@@ -1174,11 +1274,11 @@ class ConcurrentQueueTests(unittest.TestCase):
         finally:
             with db.transaction() as con:
                 con.execute(
-                    "UPDATE integracion.Intento SET Estado='Interrumpido',FinUtc=SYSUTCDATETIME() WHERE TrabajoId IN (SELECT Id FROM integracion.Trabajo WHERE LoteId=?) AND Estado='EnCurso'",
+                    "UPDATE integracion.Intento SET Estado='Interrumpido',FinUTC=SYSUTCDATETIME() WHERE TrabajoId IN (SELECT Id FROM integracion.Trabajo WHERE LoteId=?) AND Estado='EnCurso'",
                     batch["lote_id"],
                 )
                 con.execute(
-                    "UPDATE integracion.Trabajo SET Estado='Cancelado',Token=NULL,LeaseHastaUtc=NULL,FinalizadoUtc=SYSUTCDATETIME() WHERE LoteId=?",
+                    "UPDATE integracion.Trabajo SET Estado='Cancelado',Token=NULL,LeaseHastaUTC=NULL,FinalizadoUTC=SYSUTCDATETIME() WHERE LoteId=?",
                     batch["lote_id"],
                 )
 

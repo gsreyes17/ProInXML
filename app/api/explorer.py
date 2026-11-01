@@ -1,19 +1,19 @@
 """Consultas de solo lectura para auditoria, XML original y entidades relacionadas."""
 
-from datetime import datetime, timezone
-from decimal import Decimal
 import gzip
-from io import BytesIO
 import json
+from datetime import UTC, datetime
+from decimal import Decimal
+from io import BytesIO
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 
-from app.db import rows, transaction
-from app.model_schema import registry
-from app.xml_reader import FIELDS
-from app.security import ADMIN, current_user, require_roles
+from app.infrastructure.db import rows, transaction
+from app.domain.model_schema import registry
+from app.api.security import ADMIN, current_user, require_roles
+from app.domain.xml_reader import FIELDS
 
 router = APIRouter(tags=["Exploradores"], dependencies=[Depends(current_user)])
 MODEL = {item["tabla"]: item for item in registry()}
@@ -56,7 +56,7 @@ def audit_tables():
             row[0]
             for row in con.execute(
                 "SELECT s.name+'.'+t.name FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id "
-                "WHERE s.name IN ('integracion','datos','catalogo','modelo','seguridad') ORDER BY s.name,t.name"
+                "WHERE s.name IN ('integracion','staging','modelo','seguridad') ORDER BY s.name,t.name"
             )
         ]
 
@@ -90,15 +90,15 @@ def audit_log(
         if value is not None:
             if value.tzinfo is None:
                 raise HTTPException(422, "Las fechas deben incluir zona horaria.")
-            filters.append(f"FechaUtc{comparison}?")
-            params.append(value.astimezone(timezone.utc).replace(tzinfo=None))
+            filters.append(f"FechaUTC{comparison}?")
+            params.append(value.astimezone(UTC).replace(tzinfo=None))
     if desde and hasta and desde >= hasta:
         raise HTTPException(422, "La fecha inicial debe ser anterior a la final.")
     with transaction() as con:
         return page(
             con,
             "auditoria.Cambio",
-            "Id,Tabla,RegistroId,Operacion,FechaUtc,UsuarioId,Actor,Rol,LoginSql,Correlacion",
+            "Id,Tabla,RegistroId,Operacion,FechaUTC,UsuarioId,Actor,Rol,LoginSQL,Correlacion",
             filters,
             params,
             limite,
@@ -107,19 +107,48 @@ def audit_log(
         )
 
 
+AUDIT_LOADS = """(SELECT a.*,d.CantidadRegistros,d.EsValido,i.HTTPStatus,
+ COALESCE(i.URLSolicitada,c.URL) AS URL,
+ CONVERT(bit,CASE WHEN d.Id IS NULL THEN 0 ELSE 1 END) AS DocumentoDisponible,
+ CASE WHEN d.Id IS NULL THEN N'Documento eliminado'
+      WHEN d.EsValido=0 THEN N'Rechazado'
+      WHEN d.CantidadRegistros=0 THEN N'Sin datos'
+      ELSE N'Con datos' END AS Resultado
+ FROM auditoria.CargaDocumento a
+ LEFT JOIN integracion.Documento d ON d.Id=a.DocumentoId
+ LEFT JOIN integracion.Consulta c ON c.Id=d.ConsultaId
+ LEFT JOIN integracion.Intento i ON i.Id=d.IntentoId) cargas"""
+
+
 @router.get("/auditoria/cargas", dependencies=[Depends(require_roles(ADMIN))])
 def document_audit(
     documento_id: int | None = Query(None, ge=1),
+    resultado: Literal["sin_datos", "con_datos", "rechazado", "eliminado"]
+    | None = None,
     antes_de: int | None = Query(None, ge=1),
     limite: int = Query(25, ge=1, le=100),
 ):
+    filters, params = [], []
+    if documento_id:
+        filters.append("DocumentoId=?")
+        params.append(documento_id)
+    if resultado:
+        filters.append("Resultado=?")
+        params.append(
+            {
+                "sin_datos": "Sin datos",
+                "con_datos": "Con datos",
+                "rechazado": "Rechazado",
+                "eliminado": "Documento eliminado",
+            }[resultado]
+        )
     with transaction() as con:
         return page(
             con,
-            "auditoria.CargaDocumento",
+            AUDIT_LOADS,
             "*",
-            ["DocumentoId=?"] if documento_id else [],
-            [documento_id] if documento_id else [],
+            filters,
+            params,
             limite,
             antes_de,
             descending=True,
@@ -184,14 +213,14 @@ def xml_data(
     with transaction() as con:
         result = page(
             con,
-            "datos.GastoActual" if vigentes else "datos.Gasto",
+            "staging.GastoActual" if vigentes else "staging.Gasto",
             "*",
             filters,
             params,
             limite,
             despues_de,
         )
-    result["columnas"] = ["Id", "DocumentoId", "Ordinal", *FIELDS, "CreadoUtc"]
+    result["columnas"] = ["Id", "DocumentoId", "Ordinal", *FIELDS]
     if solo_xml:
         result["identificadores"] = [r["Id"] for r in result["registros"]]
         result["registros"] = [{f: r[f] for f in FIELDS} for r in result["registros"]]
@@ -202,14 +231,14 @@ def xml_data(
 @router.get("/datos/xml/{registro_id}")
 def xml_detail(registro_id: int):
     with transaction() as con:
-        found = rows(con.execute("SELECT * FROM datos.Gasto WHERE Id=?", registro_id))
+        found = rows(con.execute("SELECT * FROM staging.Gasto WHERE Id=?", registro_id))
         if not found:
             raise HTTPException(404, "Registro XML no encontrado.")
         raw = found[0]
         trace = rows(
             con.execute(
                 "SELECT d.Id AS DocumentoId,d.ConsultaId,d.IntentoId,d.Sha256,d.EsValido,d.CantidadRegistros,"
-                "d.ErrorValidacion,d.CreadoUtc AS DocumentoCreadoUtc,c.Url,"
+                "d.ErrorValidacion,d.CreadoUTC AS DocumentoCreadoUTC,c.URL,"
                 "CASE WHEN c.DocumentoActualId=d.Id THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Vigente "
                 "FROM integracion.Documento d JOIN integracion.Consulta c ON c.Id=d.ConsultaId WHERE d.Id=?",
                 raw["DocumentoId"],
@@ -221,7 +250,6 @@ def xml_detail(registro_id: int):
             "trazabilidad": {
                 "Id": raw["Id"],
                 "Ordinal": raw["Ordinal"],
-                "CreadoUtc": raw["CreadoUtc"],
                 **trace,
             },
         }
@@ -242,7 +270,7 @@ def execution_report(
     for column, value in [
         ("TrabajoId", trabajo_id),
         ("LoteId", lote_id),
-        ("HttpStatus", http_status),
+        ("HTTPStatus", http_status),
         ("Estado", estado),
     ]:
         if value is not None and value != "":
@@ -250,7 +278,7 @@ def execution_report(
             params.append(value)
     if solo_fallos:
         filters.append(
-            "(Estado IN ('Error','Interrumpido') OR HttpStatus>=400 OR Error IS NOT NULL)"
+            "(Estado IN ('Error','Interrumpido') OR HTTPStatus>=400 OR Error IS NOT NULL)"
         )
     with transaction() as con:
         return page(
@@ -298,13 +326,13 @@ def observations(
 
 
 DOCUMENTS = """(SELECT d.Id,d.ConsultaId,d.Sha256,d.EsValido,d.CantidadRegistros,d.ErrorValidacion,
- d.ContentType,d.CreadoUtc,c.Url,c.AnoEje,c.SecEjec,a.HttpStatus,
+ d.ContentType,d.CreadoUTC,c.URL,c.AnoEje,c.SecEjec,a.HTTPStatus,
  CASE WHEN c.DocumentoActualId=d.Id THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Vigente,
- CASE WHEN a.HttpStatus<>200 THEN N'Error HTTP' WHEN d.EsValido=0 THEN N'Rechazado'
+ CASE WHEN a.HTTPStatus<>200 THEN N'Error HTTP' WHEN d.EsValido=0 THEN N'Rechazado'
       ELSE N'Valido' END AS EstadoDocumento,
  (SELECT COUNT(*) FROM integracion.ObservacionDato o WHERE o.DocumentoId=d.Id) AS Observaciones,
  (SELECT COUNT(*) FROM integracion.ObservacionDato o WHERE o.DocumentoId=d.Id AND o.Severidad='Error') AS ErroresCalidad,
- (SELECT COUNT(*) FROM datos.Gasto g WHERE g.DocumentoId=d.Id) AS RegistrosDetalle
+ (SELECT COUNT(*) FROM staging.Gasto g WHERE g.DocumentoId=d.Id) AS RegistrosDetalle
  FROM integracion.Documento d JOIN integracion.Consulta c ON c.Id=d.ConsultaId
  JOIN integracion.Intento a ON a.Id=d.IntentoId) documentos"""
 
@@ -325,16 +353,16 @@ def documents(
         ("Id", documento_id),
         ("AnoEje", ano),
         ("SecEjec", sec_ejec),
-        ("HttpStatus", http_status),
+        ("HTTPStatus", http_status),
     ]:
         if value is not None:
             filters.append(f"{column}=?")
             params.append(value)
     conditions = {
         "validos": "EsValido=1",
-        "rechazados": "EsValido=0 AND HttpStatus=200",
+        "rechazados": "EsValido=0 AND HTTPStatus=200",
         "con_observaciones": "Observaciones>0",
-        "errores_http": "HttpStatus<>200",
+        "errores_http": "HTTPStatus<>200",
     }
     if calidad:
         filters.append(conditions[calidad])
@@ -356,7 +384,7 @@ def document_detail(documento_id: int, ordinal: int | None = Query(None, ge=1)):
         record = (
             rows(
                 con.execute(
-                    "SELECT * FROM datos.Gasto WHERE DocumentoId=? AND Ordinal=?",
+                    "SELECT * FROM staging.Gasto WHERE DocumentoId=? AND Ordinal=?",
                     documento_id,
                     ordinal,
                 )
@@ -401,7 +429,6 @@ def model_data(
     definition = MODEL.get(tabla)
     if definition is None:
         raise HTTPException(404, "Tabla no disponible en el explorador.")
-    schema = "catalogo" if tabla == "TipoActProy" else "modelo"
     filters, params = [], []
     if registro_id is not None:
         filters.append("Id=?")
@@ -410,23 +437,17 @@ def model_data(
         filters.append(
             "("
             + " OR ".join(
-                f"CHARINDEX(?,CONVERT(nvarchar(100),[{column}]))>0"
+                f"CHARINDEX(?,CONVERT(nvarchar(160),[{column}]))>0"
                 for column in definition["columnas"]
-                if column != "CreadoUtc"
             )
             + ")"
         )
-        params.extend(
-            [buscar]
-            * len(
-                [column for column in definition["columnas"] if column != "CreadoUtc"]
-            )
-        )
+        params.extend([buscar] * len(definition["columnas"]))
     # Identificadores elegidos exclusivamente del registro fijo, nunca del usuario.
     with transaction() as con:
         result = page(
             con,
-            f"[{schema}].[{definition['tabla']}]",
+            f"[modelo].[{definition['tabla']}]",
             ",".join(f"[{c}]" for c in definition["columnas"]),
             filters,
             params,

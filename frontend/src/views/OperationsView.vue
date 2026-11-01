@@ -17,9 +17,9 @@ const columns = computed(() =>
         "Numero",
         "Estado",
         "Etapa",
-        "HttpStatus",
-        "InicioUtc",
-        "FinUtc",
+        "HTTPStatus",
+        "InicioUTC",
+        "FinUTC",
         "DuracionMs",
         "DocumentoId",
         "RegistrosLeidos",
@@ -28,7 +28,7 @@ const columns = computed(() =>
         "RegistrosRechazados",
         "Observaciones",
         "Error",
-        "UrlSolicitada",
+        "URLSolicitada",
       ]
     : [
         "Id",
@@ -38,7 +38,7 @@ const columns = computed(() =>
         "CodigoObservacion",
         "Severidad",
         "Detalle",
-        "FechaUtc",
+        "FechaUTC",
       ],
 );
 const filters = computed(() =>
@@ -84,13 +84,13 @@ const filters = computed(() =>
     :columns="columns"
     :filters="filters"
     :labels="{
-      HttpStatus: 'HTTP',
+      HTTPStatus: 'HTTP',
       DuracionMs: 'Duración (ms)',
       RegistrosLeidos: 'Leídos',
       RegistrosInsertados: 'Insertados',
       RegistrosReutilizados: 'Reutilizados',
       RegistrosRechazados: 'Rechazados',
-      UrlSolicitada: 'URL solicitada',
+      URLSolicitada: 'URL solicitada',
     }"
     ><template #cell="{ row, column }"
       ><RouterLink
@@ -98,11 +98,11 @@ const filters = computed(() =>
         class="row-action"
         :to="{ name: 'datos', query: { documento_id: Number(row[column]) } }"
         >{{ row[column] }} ↗</RouterLink
-      ><template v-else-if="column === 'HttpStatus'">{{
+      ><template v-else-if="column === 'HTTPStatus'">{{
         row[column] === null ? "Sin respuesta" : row[column]
       }}</template
       ><template v-else>{{
-        column.endsWith("Utc") ? date(row[column]) : text(row[column])
+        column.endsWith("UTC") ? date(row[column]) : text(row[column])
       }}</template></template
     ><template #actions="{ row }"
       ><button

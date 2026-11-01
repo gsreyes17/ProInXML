@@ -159,7 +159,7 @@ async function submit(excel = false) {
           }}</span
           ><span
             ><strong class="history-title">Carga #{{ batch.Id }}</strong
-            ><span class="history-date">{{ date(batch.CreadoUtc) }}</span></span
+            ><span class="history-date">{{ date(batch.CreadoUTC) }}</span></span
           ><span class="history-count"
             >{{ batch.Completados }}/{{ batch.Total }} listas</span
           ></RouterLink

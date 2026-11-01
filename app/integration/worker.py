@@ -9,9 +9,9 @@ from xml.etree.ElementTree import ParseError
 import httpx
 from defusedxml.common import DefusedXmlException
 
-from app.config import settings
-from app.metrics import AttemptMetrics
-from app.service import claim_job, fail_job, persist_records, save_response
+from app.infrastructure.config import settings
+from app.integration.metrics import AttemptMetrics
+from app.integration.service import claim_job, fail_job, persist_records, save_response
 
 log = logging.getLogger("proinxml.worker")
 
@@ -55,7 +55,7 @@ def process(job: dict, *, concurrency=None):
                 follow_redirects=False,
                 trust_env=False,
             ) as client:
-                with client.stream("GET", job["Url"]) as response:
+                with client.stream("GET", job["URL"]) as response:
                     status = meter.status = response.status_code
                     content_type = response.headers.get("content-type", "")
                     payload = bytearray()

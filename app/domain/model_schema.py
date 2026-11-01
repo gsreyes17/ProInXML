@@ -6,7 +6,7 @@ maestros oficiales ni dependencias adicionales proyecto/SNIP o meta/finalidad.
 
 from dataclasses import dataclass
 
-from app.xml_reader import MONEY_FIELDS
+from app.domain.xml_reader import MONEY_FIELDS
 
 
 @dataclass(frozen=True)
@@ -47,10 +47,9 @@ ENTITIES = {
     ),
     "ContextoEjecutora": (
         "Instituciones",
-        "Ejecutoras por ejercicio",
+        "Contextos de ejecutora",
         [
             ref("Ejecutora"),
-            Column("AnoEje", "smallint", "AnoEje"),
             Column("SecEjec", "int", "SecEjec"),
         ],
     ),
@@ -142,6 +141,11 @@ ENTITIES = {
         [ref("Departamento"), code("Provincia")],
     ),
     "Distrito": ("Ubicaciones", "Distritos", [ref("Provincia"), code("Distrito")]),
+    "TipoActProy": (
+        "Otros",
+        "Codigos TipoActProy",
+        [Column("Codigo", "bigint", "TipoActProy")],
+    ),
 }
 FACT_COLUMNS = [
     ref(t)
@@ -156,9 +160,10 @@ FACT_COLUMNS = [
         "ProyectoSNIP",
         "Componente",
         "Distrito",
+        "TipoActProy",
     )
 ] + [
-    Column("TipoActProyId", "bigint", "TipoActProy"),
+    Column("AnoEje", "smallint", "AnoEje"),
     Column("MesEje", "tinyint", "MesEje"),
 ]
 FACT_COLUMNS += [Column(name, "decimal(19,4)", name) for name in MONEY_FIELDS]
@@ -172,7 +177,14 @@ def registry():
                 "tabla": name,
                 "nombre": label,
                 "grupo": group,
-                "columnas": ["Id"] + [c.name for c in columns] + ["CreadoUtc"],
+                "columnas": ["Id"]
+                + [c.name for c in columns]
+                + (
+                    ["Nombre"]
+                    if name in ("Departamento", "Provincia", "Distrito")
+                    else []
+                )
+                + (["NombreRegion"] if name == "Provincia" else []),
                 "relaciones": [
                     {"columna": c.name, "tabla": c.reference}
                     for c in columns
@@ -184,8 +196,8 @@ def registry():
         {
             "tabla": "Gasto",
             "nombre": "Gasto normalizado",
-            "grupo": "Registros",
-            "columnas": ["Id"] + [c.name for c in FACT_COLUMNS] + ["CreadoUtc"],
+            "grupo": "Gasto normalizado",
+            "columnas": ["Id"] + [c.name for c in FACT_COLUMNS],
             "relaciones": [
                 {"columna": c.name, "tabla": c.reference}
                 for c in FACT_COLUMNS
@@ -193,17 +205,7 @@ def registry():
             ]
             + [
                 {"columna": "Id", "tabla": "XML"},
-                {"columna": "TipoActProyId", "tabla": "TipoActProy"},
             ],
-        }
-    )
-    result.append(
-        {
-            "tabla": "TipoActProy",
-            "nombre": "Tipos de actividad/proyecto",
-            "grupo": "Registros",
-            "columnas": ["Id", "Nombre", "CreadoUtc"],
-            "relaciones": [],
         }
     )
     return result

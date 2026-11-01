@@ -7,11 +7,11 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from app.db import rows, transaction
-from app.locks import integration_lock
-from app.model_schema import ENTITIES, FACT_COLUMNS
-from app.normalizer import acquire_document_lock
-from app.security import ADMIN, require_roles
+from app.infrastructure.db import rows, transaction
+from app.infrastructure.locks import integration_lock
+from app.domain.model_schema import ENTITIES, FACT_COLUMNS
+from app.integration.normalizer import acquire_document_lock, normalize_document
+from app.api.security import ADMIN, require_roles
 
 router = APIRouter(
     prefix="/mantenimiento",
@@ -50,7 +50,7 @@ def snapshot(con, scope):
     if scope.documento_id is not None:
         found = rows(
             con.execute(
-                "SELECT d.Id,d.ConsultaId,d.Sha256,d.EsValido,d.CantidadRegistros,d.ErrorValidacion,c.Url "
+                "SELECT d.Id,d.ConsultaId,d.Sha256,d.EsValido,d.CantidadRegistros,d.ErrorValidacion,c.URL "
                 "FROM integracion.Documento d JOIN integracion.Consulta c ON c.Id=d.ConsultaId WHERE d.Id=?",
                 scope.documento_id,
             )
@@ -69,7 +69,7 @@ def snapshot(con, scope):
             " WHERE Id=?" if document else "",
             params,
         ),
-        ("registros_xml", "datos.Gasto", filters, params),
+        ("registros_xml", "staging.Gasto", filters, params),
         ("observaciones", "integracion.ObservacionDato", filters, params),
         ("trabajos", "integracion.Trabajo", filters, params),
         ("intentos", "integracion.Intento", filters, params),
@@ -78,7 +78,7 @@ def snapshot(con, scope):
         (
             "registros_modelo",
             "modelo.Gasto",
-            " WHERE Id IN(SELECT Id FROM datos.Gasto WHERE DocumentoId=?)"
+            " WHERE Id IN(SELECT Id FROM staging.Gasto WHERE DocumentoId=?)"
             if document
             else "",
             params,
@@ -119,7 +119,7 @@ def snapshot(con, scope):
         "confirmacion": confirmation(scope),
         "conserva": [
             "Usuarios y roles",
-            "Configuracion del servicio y catalogo TipoActProy",
+            "Configuracion del servicio",
             "Toda la auditoria",
             "Historial de metricas",
         ],
@@ -167,6 +167,75 @@ def prune_dimensions(con):
     return removed
 
 
+class Normalization(BaseModel):
+    documento_id: int = Field(ge=1)
+
+
+@router.post("/normalizar")
+def normalize_saved_document(body: Normalization):
+    """Reconstruye el modelo desde el detalle conservado, sin releer la URL."""
+    with transaction() as con:
+        integration_lock(con)
+        acquire_document_lock(con)
+        document = con.execute(
+            "SELECT EsValido,CantidadRegistros FROM integracion.Documento WHERE Id=?",
+            body.documento_id,
+        ).fetchone()
+        if not document:
+            raise HTTPException(404, "Documento no encontrado.")
+        if not document[0]:
+            raise HTTPException(409, "El documento no supero la validacion de calidad.")
+        raw_count = con.execute(
+            "SELECT COUNT_BIG(*) FROM staging.Gasto WHERE DocumentoId=?",
+            body.documento_id,
+        ).fetchone()[0]
+        if raw_count != document[1]:
+            raise HTTPException(
+                409,
+                "La cantidad del detalle no coincide con el documento; revisa los datos antes de normalizar.",
+            )
+        before = con.execute(
+            "SELECT COUNT_BIG(*) FROM modelo.Gasto m "
+            "JOIN staging.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
+            body.documento_id,
+        ).fetchone()[0]
+        normalize_document(con, body.documento_id)
+        after = con.execute(
+            "SELECT COUNT_BIG(*) FROM modelo.Gasto m "
+            "JOIN staging.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
+            body.documento_id,
+        ).fetchone()[0]
+        if after != raw_count:
+            raise RuntimeError(
+                "La normalizacion no conserva todas las filas del documento."
+            )
+        audit = json.dumps(
+            {
+                "accion": "NormalizarDocumentoManual",
+                "documento_id": body.documento_id,
+                "filas_crudas": raw_count,
+                "filas_modelo_antes": before,
+                "filas_modelo_despues": after,
+            },
+            ensure_ascii=False,
+        )
+        con.execute(
+            "INSERT auditoria.Cambio(Tabla,RegistroId,Operacion,UsuarioId,Actor,Rol,LoginSQL,Correlacion,Despues) "
+            "VALUES(N'integracion.Documento',?,'U',TRY_CONVERT(bigint,SESSION_CONTEXT(N'usuario_id')),"
+            "CONVERT(nvarchar(128),SESSION_CONTEXT(N'actor')),CONVERT(nvarchar(40),SESSION_CONTEXT(N'rol')),"
+            "ORIGINAL_LOGIN(),TRY_CONVERT(uniqueidentifier,SESSION_CONTEXT(N'correlation')),?)",
+            body.documento_id,
+            audit,
+        )
+    return {
+        "documento_id": body.documento_id,
+        "filas_crudas": raw_count,
+        "filas_modelo_antes": before,
+        "filas_modelo_despues": after,
+        "mensaje": "Modelo reconstruido desde las filas XML guardadas.",
+    }
+
+
 @router.post("/eliminar")
 def delete_data(body: Deletion):
     if body.confirmacion != confirmation(body) or len(body.motivo.strip()) < 5:
@@ -182,7 +251,7 @@ def delete_data(body: Deletion):
         ).fetchone()[0]:
             raise HTTPException(
                 409,
-                "Hay trabajos en curso. Espera a que terminen antes de eliminar datos.",
+                "Hay trabajos en curso. Espera a que terminen antes de eliminar staging.",
             )
         before = snapshot(con, body)
         if before["revision"] != body.revision:
@@ -206,8 +275,8 @@ def delete_data(body: Deletion):
                 doc_id,
             )
             con.execute(
-                "UPDATE integracion.Trabajo SET DocumentoId=NULL,Estado='Cancelado',Token=NULL,LeaseHastaUtc=NULL,"
-                "FinalizadoUtc=SYSUTCDATETIME(),UltimoError=N'Documento eliminado desde mantenimiento' WHERE DocumentoId=?",
+                "UPDATE integracion.Trabajo SET DocumentoId=NULL,Estado='Cancelado',Token=NULL,LeaseHastaUTC=NULL,"
+                "FinalizadoUTC=SYSUTCDATETIME(),UltimoError=N'Documento eliminado desde mantenimiento' WHERE DocumentoId=?",
                 doc_id,
             )
             con.execute(
@@ -215,10 +284,10 @@ def delete_data(body: Deletion):
                 doc_id,
             )
             con.execute(
-                "DELETE m FROM modelo.Gasto m JOIN datos.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
+                "DELETE m FROM modelo.Gasto m JOIN staging.Gasto g ON g.Id=m.Id WHERE g.DocumentoId=?",
                 doc_id,
             )
-            con.execute("DELETE datos.Gasto WHERE DocumentoId=?", doc_id)
+            con.execute("DELETE staging.Gasto WHERE DocumentoId=?", doc_id)
             con.execute(
                 "DELETE integracion.ObservacionDato WHERE DocumentoId=?", doc_id
             )
@@ -235,7 +304,7 @@ def delete_data(body: Deletion):
             )
             for table in (
                 "modelo.Gasto",
-                "datos.Gasto",
+                "staging.Gasto",
                 "integracion.ObservacionDato",
                 "integracion.Documento",
                 "integracion.Intento",
@@ -253,7 +322,7 @@ def delete_data(body: Deletion):
             "entidades_sin_referencias_eliminadas": removed,
         }
         con.execute(
-            "INSERT auditoria.Cambio(Tabla,RegistroId,Operacion,UsuarioId,Actor,Rol,LoginSql,Correlacion,Antes) "
+            "INSERT auditoria.Cambio(Tabla,RegistroId,Operacion,UsuarioId,Actor,Rol,LoginSQL,Correlacion,Antes) "
             "VALUES(N'integracion.Documento',?,'D',TRY_CONVERT(bigint,SESSION_CONTEXT(N'usuario_id')),"
             "CONVERT(nvarchar(128),SESSION_CONTEXT(N'actor')),CONVERT(nvarchar(40),SESSION_CONTEXT(N'rol')),"
             "ORIGINAL_LOGIN(),TRY_CONVERT(uniqueidentifier,SESSION_CONTEXT(N'correlation')),?)",

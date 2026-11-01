@@ -2,6 +2,34 @@
 
 ProInXML 1.0 utiliza Vue 3, Vue Router y Pinia; FastAPI; un worker Python con hilos; y SQL Server. La cola permanece en SQL para recuperar trabajos después de una interrupción.
 
+## Organización del backend
+
+```text
+app/
+├── run.py                 Lanzador de los procesos
+├── api/                   FastAPI, rutas, autenticación y entrega de Vue
+│   ├── main.py            Entrada HTTP y registro de rutas
+│   ├── security.py        Sesiones, roles y acceso
+│   ├── explorer.py        Consultas de datos y auditoría
+│   ├── analysis.py        Análisis de tiempos
+│   ├── maintenance.py     Limpieza y mantenimiento
+│   └── ui.py              Archivos compilados de Vue
+├── integration/           Flujo asíncrono de documentos
+│   ├── service.py         Lotes, trabajos y persistencia
+│   ├── worker.py          Descarga, reintentos y ejecución
+│   ├── normalizer.py      Paso de staging al modelo
+│   └── metrics.py         Medidas de cada intento
+├── domain/                Reglas de los datos
+│   ├── xml_reader.py      URL, contrato y lectura del XML
+│   └── model_schema.py    Entidades y relaciones del modelo
+└── infrastructure/        Recursos compartidos
+    ├── config.py          Variables de entorno
+    ├── db.py              Conexión y transacciones SQL
+    └── locks.py           Coordinación de operaciones
+```
+
+La API registra lotes y consulta estados. `integration.worker` ejecuta los trabajos de la cola SQL, descarga el XML y usa `integration.service` para guardarlo; `integration.normalizer` proyecta el detalle a `modelo`. Las reglas del XML y las definiciones relacionales viven en `domain`. Los módulos comparten conexión, configuración y bloqueos de `infrastructure`. `app.run` lanza API y worker como procesos separados.
+
 ```mermaid
 flowchart LR
     Usuario --> Vue[Vue / TypeScript]
@@ -11,7 +39,7 @@ flowchart LR
     Worker --> MEF[Servicio XML MEF]
     MEF --> Original[(Documento gzip + SHA-256)]
     Original --> Validacion[Validación del contrato]
-    Validacion --> Detalle[(datos.Gasto: 39 campos)]
+    Validacion --> Detalle[(staging.Gasto: 39 campos)]
     Detalle --> Modelo[(modelo: entidades + gasto)]
     Modelo --> Publicacion[Documento vigente]
     Worker --> Metricas[(analisis.MetricaIntento)]
@@ -31,14 +59,13 @@ El normalizador deduplica las claves de `SecuenciaFuncional` y `Meta` antes de r
 
 ## Tablas y vistas
 
-Son **45 tablas**, todas con `CreadoUtc`. El [DBML](DIAGRAMA_BD.dbml.txt) contiene los 313 campos, 47 FK y 13 grupos funcionales. `dbo.sysdiagrams` pertenece a SSMS y queda fuera del modelo del proyecto.
+Son **45 tablas**. El [DBML](DIAGRAMA_BD.dbml.txt) contiene 278 columnas, 47 FK y 13 grupos funcionales. `AnoEje` y `MesEje` permanecen en `modelo.Gasto`; `ContextoEjecutora` conserva solo la ejecutora y `SecEjec`. Las fechas de eventos se conservan en documentos, trabajos, cuentas, auditoría y métricas. `dbo.sysdiagrams` pertenece a SSMS y queda fuera del modelo del proyecto.
 
 | Esquema | Contenido |
 | --- | --- |
 | `integracion` | Servicio, Lote, Consulta, Trabajo, Intento, Documento, ObservacionDato |
-| `datos` | Gasto con los 39 campos, DocumentoId y Ordinal |
-| `modelo` | 29 entidades y Gasto; el hecho utiliza la identidad del detalle |
-| `catalogo` | TipoActProy: 2 Proyecto, 3 Actividad |
+| `staging` | Gasto con los 39 campos, DocumentoId y Ordinal |
+| `modelo` | 30 entidades y Gasto; el hecho utiliza la identidad del detalle |
 | `seguridad` | Rol, Usuario y EventoAcceso |
 | `auditoria` | Cambio y CargaDocumento |
 | `analisis` | MetricaIntento, con duraciones, HTTP, filas y concurrencia |
@@ -47,8 +74,8 @@ Son **45 tablas**, todas con `CreadoUtc`. El [DBML](DIAGRAMA_BD.dbml.txt) contie
 
 | Vista | Propósito |
 | --- | --- |
-| `datos.GastoActual` | Detalle de documentos vigentes |
-| `datos.vw_GastoXML` | Exactamente los 39 campos XML, en orden y sin DISTINCT |
+| `staging.GastoActual` | Detalle de documentos vigentes |
+| `staging.vw_GastoXML` | Exactamente los 39 campos XML, en orden y sin DISTINCT |
 | `modelo.GastoActual` | Hechos de documentos vigentes |
 | `modelo.GastoReconstruido` | Reconstrucción de los 39 campos a partir del modelo |
 | `reportes.EjecucionServicio` | HTTP, estados, tiempos y conteos por intento |
@@ -57,13 +84,13 @@ Son **45 tablas**, todas con `CreadoUtc`. El [DBML](DIAGRAMA_BD.dbml.txt) contie
 
 | Script | Responsabilidad |
 | --- | --- |
-| `001_base.sql` | Esquemas, 14 tablas base, FK, índices, rol SQL y catálogos iniciales |
-| `002_modelo.sql` | 29 entidades y tabla de hechos, con sus claves |
+| `001_base.sql` | Esquemas, 14 tablas base, FK, índices, rol SQL, catálogos iniciales y migración de `datos` a `staging` |
+| `002_modelo.sql` | 30 entidades y tabla de hechos, con claves, nombres geográficos y actualización de tablas anteriores |
 | `003_normalizacion.sql` | Procedimiento de normalización y reconstrucción |
-| `004_operacion.sql` | Cola, vistas, triggers de auditoría y permisos |
+| `004_operacion.sql` | Cola, vistas, limpieza de vistas antiguas, triggers de auditoría y permisos |
 | `005_metricas.sql` | Tabla de mediciones e índices de análisis |
 
-La instalación crea directamente el esquema final, sin pasar por tablas o estados del prototipo. Los scripts pueden reaplicarse sobre el esquema actual. `scripts/desarrollo/build_model_sql.py` genera 002 y 003 desde `app/model_schema.py`; no se ejecuta durante el arranque.
+La instalación crea directamente el esquema final y migra instalaciones anteriores sin borrar registros. Al aplicar todos los SQL, `scripts/aplicar_sql.py` ejecuta `scripts/cargar_ubigeo.py` con `data_models/ubigeo_distrito.csv`. El modelo recibe nombre de departamento, provincia, región y distrito según el código INEI; códigos especiales sin correspondencia quedan con nombre NULL. `scripts/desarrollo/build_model_sql.py` genera 002 y 003 desde `app/domain/model_schema.py`; no se ejecuta durante el arranque.
 
 ## Seguridad y auditoría
 

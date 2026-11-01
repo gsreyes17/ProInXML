@@ -10,21 +10,21 @@ from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field, ValidationError
 
-from app.config import settings
-from app.db import rows, transaction
-from app.security import (
+from app.infrastructure.config import settings
+from app.infrastructure.db import rows, transaction
+from app.api.security import (
     ADMIN,
     OPERATORS,
     current_user,
     require_roles,
     router as security_router,
 )
-from app.service import create_batch, schedule_again
-from app.xml_reader import canonical_source
-from app.explorer import router as explorer_router
-from app.maintenance import router as maintenance_router
-from app.analysis import router as analysis_router
-from app.ui import DIST, router as ui_router
+from app.integration.service import create_batch, schedule_again
+from app.domain.xml_reader import canonical_source
+from app.api.explorer import router as explorer_router
+from app.api.maintenance import router as maintenance_router
+from app.api.analysis import router as analysis_router
+from app.api.ui import DIST, router as ui_router
 
 app = FastAPI(
     title="ProInXML",
@@ -174,11 +174,11 @@ def recent_batches(
     with transaction() as con:
         return rows(
             con.execute(
-                "SELECT TOP(?) l.Id,l.Nombre,l.CreadoUtc,l.CreadoPorUsuarioId,COUNT(t.Id) AS Total,"
+                "SELECT TOP(?) l.Id,l.Nombre,l.CreadoUTC,l.CreadoPorUsuarioId,COUNT(t.Id) AS Total,"
                 "SUM(CASE WHEN t.Estado IN ('Completado','CompletadoSinDatos','YaCargada') THEN 1 ELSE 0 END) AS Completados,"
                 "SUM(CASE WHEN t.Estado='Fallido' THEN 1 ELSE 0 END) AS Fallidos "
                 "FROM integracion.Lote l LEFT JOIN integracion.Trabajo t ON t.LoteId=l.Id "
-                "WHERE (? IS NULL OR l.Id<?) GROUP BY l.Id,l.Nombre,l.CreadoUtc,l.CreadoPorUsuarioId ORDER BY l.Id DESC",
+                "WHERE (? IS NULL OR l.Id<?) GROUP BY l.Id,l.Nombre,l.CreadoUTC,l.CreadoPorUsuarioId ORDER BY l.Id DESC",
                 limite,
                 antes_de,
                 antes_de,
@@ -221,7 +221,7 @@ def batch_status(lote_id: int, user=Depends(current_user)):
             lote_id,
         ).fetchone()[0]
         average = con.execute(
-            "SELECT AVG(CONVERT(float,DATEDIFF_BIG(millisecond,a.InicioUtc,a.FinUtc)))/1000 "
+            "SELECT AVG(CONVERT(float,DATEDIFF_BIG(millisecond,a.InicioUTC,a.FinUTC)))/1000 "
             "FROM integracion.Intento a JOIN integracion.Trabajo t ON t.Id=a.TrabajoId "
             "WHERE t.LoteId=? AND a.Estado='Completado'",
             lote_id,
@@ -251,10 +251,10 @@ def batch_jobs(
     with transaction() as con:
         return rows(
             con.execute(
-                "SELECT TOP(?) t.Id,t.LoteId,t.ConsultaId,t.DocumentoId,t.Estado,t.Intentos,t.MaxIntentos,t.ProximoIntentoUtc,"
-                "t.UltimoError,t.CreadoUtc,t.FinalizadoUtc,c.Url,c.AnoEje,c.NivelGobierno,c.SecEjec,"
+                "SELECT TOP(?) t.Id,t.LoteId,t.ConsultaId,t.DocumentoId,t.Estado,t.Intentos,t.MaxIntentos,t.ProximoIntentoUTC,"
+                "t.UltimoError,t.CreadoUTC,t.FinalizadoUTC,c.URL,c.AnoEje,c.NivelGobierno,c.SecEjec,"
                 "CASE WHEN t.Estado IN ('Completado','CompletadoSinDatos','YaCargada') THEN d.CantidadRegistros END AS CantidadRegistros,"
-                "(SELECT TOP(1) a.HttpStatus FROM integracion.Intento a WHERE a.TrabajoId=t.Id ORDER BY a.Numero DESC) AS HttpStatus "
+                "(SELECT TOP(1) a.HTTPStatus FROM integracion.Intento a WHERE a.TrabajoId=t.Id ORDER BY a.Numero DESC) AS HTTPStatus "
                 "FROM integracion.Trabajo t JOIN integracion.Consulta c ON c.Id=t.ConsultaId "
                 "LEFT JOIN integracion.Documento d ON d.Id=t.DocumentoId WHERE t.LoteId=? AND t.Id>? "
                 "AND (? IS NULL OR t.Estado=?) ORDER BY t.Id",
@@ -303,7 +303,7 @@ def job_expenses(
             raise HTTPException(409, "La carga todavia no se ha completado.")
         result = rows(
             con.execute(
-                "SELECT TOP(?) * FROM datos.Gasto WHERE DocumentoId=? AND Id>? ORDER BY Id",
+                "SELECT TOP(?) * FROM staging.Gasto WHERE DocumentoId=? AND Id>? ORDER BY Id",
                 limite,
                 job[0],
                 despues_de,
@@ -343,7 +343,7 @@ def legacy_expenses(
     with transaction() as con:
         result = rows(
             con.execute(
-                "SELECT TOP(?) * FROM datos.GastoActual WHERE Id>? "
+                "SELECT TOP(?) * FROM staging.GastoActual WHERE Id>? "
                 "AND (? IS NULL OR AnoEje=?) AND (? IS NULL OR SecEjec=?) ORDER BY Id",
                 limite,
                 despues_de,

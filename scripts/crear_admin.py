@@ -8,8 +8,8 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.db import insert_id, transaction
-from app.security import password_hash
+from app.infrastructure.db import insert_id, transaction
+from app.api.security import password_hash
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)

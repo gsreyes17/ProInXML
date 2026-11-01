@@ -1,5 +1,3 @@
-"""Inicia API y worker; --dev agrega Vue/Vite con actualizacion automatica."""
-
 import argparse
 from contextlib import ExitStack
 import os
@@ -59,13 +57,13 @@ def main():
             return 1
     runtime = root / ".runtime"
     runtime.mkdir(exist_ok=True)
-    server = uvicorn.Server(uvicorn.Config("app.main:app", host="127.0.0.1", port=8000))
+    server = uvicorn.Server(uvicorn.Config("app.api.main:app", host="127.0.0.1", port=8000))
     processes = []
     stopped = Event()
     failure = Event()
     with ExitStack() as stack:
         try:
-            commands = [("worker", [sys.executable, "-m", "app.worker"], root)]
+            commands = [("worker", [sys.executable, "-m", "app.integration.worker"], root)]
             if args.dev:
                 # Es el mismo ejecutable local que utiliza pnpm dev. Un proceso
                 # Node directo permite detener Vite sin dejar un shell intermedio.

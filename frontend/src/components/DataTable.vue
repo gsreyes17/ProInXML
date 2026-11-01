@@ -34,14 +34,14 @@ defineProps<{
               'wrap-value': [
                 'Error',
                 'Detalle',
-                'UrlSolicitada',
-                'Url',
+                'URLSolicitada',
+                'URL',
                 'ErrorValidacion',
               ].includes(column),
             }"
           >
             <slot name="cell" :row="row" :column="column" :index="index">{{
-              column.endsWith("Utc") ? date(row[column]) : text(row[column])
+              column.endsWith("UTC") ? date(row[column]) : text(row[column])
             }}</slot>
           </td>
           <td v-if="$slots.actions">

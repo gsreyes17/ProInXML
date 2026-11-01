@@ -9,8 +9,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
-from app.main import app
-from app.security import current_user
+from app.api.main import app
+from app.api.security import current_user
 
 URL = (
     "http://s3.mef.gob.pe/servicios/WSPCM/SG/gastopipsg-old.asmx/"
@@ -34,8 +34,8 @@ class ApiTests(unittest.TestCase):
         app.dependency_overrides.clear()
 
     def test_actual_workbook_imports_5655_sources_without_footer(self):
-        workbook = Path(__file__).resolve().parents[1] / "XML_models" / "URLs.xlsx"
-        with patch("app.main.create_batch", return_value={"lote_id": 1}) as create:
+        workbook = Path(__file__).resolve().parents[1] / "data_models" / "URLs.xlsx"
+        with patch("app.api.main.create_batch", return_value={"lote_id": 1}) as create:
             response = self.client.post(
                 "/lotes/excel", files={"file": ("URLs.xlsx", workbook.read_bytes())}
             )
@@ -52,7 +52,7 @@ class ApiTests(unittest.TestCase):
         book.active.append([URL, 2021, "x"])
         data = BytesIO()
         book.save(data)
-        with patch("app.main.create_batch", return_value={"lote_id": 1}) as create:
+        with patch("app.api.main.create_batch", return_value={"lote_id": 1}) as create:
             response = self.client.post(
                 "/lotes/excel", files={"file": ("bad.xlsx", data.getvalue())}
             )
@@ -60,7 +60,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(create.call_args.args[1][0]["year"], 2020)
 
     def test_rejects_unapproved_url(self):
-        with patch("app.main.create_batch") as create:
+        with patch("app.api.main.create_batch") as create:
             response = self.client.post(
                 "/lotes/url", json={"url": "http://localhost/private"}
             )
@@ -85,7 +85,7 @@ class ApiTests(unittest.TestCase):
                     if info.filename == "xl/worksheets/sheet1.xml"
                     else source.read(info.filename),
                 )
-        with patch("app.main.create_batch") as create:
+        with patch("app.api.main.create_batch") as create:
             response = self.client.post(
                 "/lotes/excel", files={"file": ("malformado.xlsx", broken.getvalue())}
             )
@@ -97,7 +97,7 @@ class ApiTests(unittest.TestCase):
             Path(folder, "index.html").write_text(
                 '<div id="app"></div>', encoding="utf-8"
             )
-            with patch("app.ui.DIST", Path(folder)):
+            with patch("app.api.ui.DIST", Path(folder)):
                 response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="app"', response.text)
@@ -108,7 +108,7 @@ class ApiTests(unittest.TestCase):
             Path(folder, "index.html").write_text(
                 '<div id="app"></div>', encoding="utf-8"
             )
-            with patch("app.ui.DIST", Path(folder)):
+            with patch("app.api.ui.DIST", Path(folder)):
                 for path in (
                     "/ui/login",
                     "/ui/seguimiento",
@@ -127,7 +127,7 @@ class ApiTests(unittest.TestCase):
     def test_missing_frontend_build_has_clear_error(self):
         with (
             TemporaryDirectory(dir=self.temp_root) as folder,
-            patch("app.ui.DIST", Path(folder)),
+            patch("app.api.ui.DIST", Path(folder)),
         ):
             response = self.client.get("/")
         self.assertEqual(response.status_code, 503)
@@ -145,7 +145,7 @@ class ApiTests(unittest.TestCase):
     def test_multiple_urls_are_created_in_one_batch(self):
         urls = [URL, URL.replace("sec_ejec=3", "sec_ejec=5")]
         with patch(
-            "app.main.create_batch", return_value={"lote_id": 21, "trabajos": 2}
+            "app.api.main.create_batch", return_value={"lote_id": 21, "trabajos": 2}
         ) as create:
             response = self.client.post("/lotes/urls", json={"urls": urls})
         self.assertEqual(response.status_code, 201, response.text)
@@ -153,7 +153,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["trabajos"], 2)
 
     def test_invalid_url_rejects_entire_list_before_saving(self):
-        with patch("app.main.create_batch") as create:
+        with patch("app.api.main.create_batch") as create:
             response = self.client.post(
                 "/lotes/urls", json={"urls": [URL, "http://localhost/private"]}
             )
@@ -162,14 +162,14 @@ class ApiTests(unittest.TestCase):
         create.assert_not_called()
 
     def test_empty_or_excessive_url_lists_are_rejected(self):
-        with patch("app.main.create_batch") as create:
+        with patch("app.api.main.create_batch") as create:
             for urls in ([], [URL] * 1001):
                 response = self.client.post("/lotes/urls", json={"urls": urls})
                 self.assertEqual(response.status_code, 422)
         create.assert_not_called()
 
     def test_manual_input_accepts_1000_urls(self):
-        with patch("app.main.create_batch", return_value={"lote_id": 1}) as create:
+        with patch("app.api.main.create_batch", return_value={"lote_id": 1}) as create:
             response = self.client.post("/lotes", json={"urls": [URL] * 1000})
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(len(create.call_args.args[1]), 1000)
@@ -184,9 +184,9 @@ class ApiTests(unittest.TestCase):
             yield MagicMock()
 
         with (
-            patch("app.main.transaction", connection),
+            patch("app.api.main.transaction", connection),
             patch(
-                "app.main.rows", return_value=[{"PIA": Decimal("12345678901234.1200")}]
+                "app.api.main.rows", return_value=[{"PIA": Decimal("12345678901234.1200")}]
             ),
         ):
             response = self.client.get("/gastos")
@@ -214,8 +214,12 @@ class ApiTests(unittest.TestCase):
     def test_only_administrator_can_preview_or_delete_data(self):
         for role in ("Consulta", "Operador"):
             self.user["Rol"] = role
-            with patch("app.maintenance.transaction") as transact:
-                for path in ("/mantenimiento/vista-previa", "/mantenimiento/eliminar"):
+            with patch("app.api.maintenance.transaction") as transact:
+                for path in (
+                    "/mantenimiento/vista-previa",
+                    "/mantenimiento/eliminar",
+                    "/mantenimiento/normalizar",
+                ):
                     self.assertEqual(
                         self.client.post(path, json={"alcance": "todo"}).status_code,
                         403,
@@ -226,7 +230,7 @@ class ApiTests(unittest.TestCase):
         import hashlib
         import secrets
         import time
-        from app.security import COOKIE, sessions
+        from app.api.security import COOKIE, sessions
 
         app.dependency_overrides.clear()
         token = secrets.token_urlsafe(32)
@@ -238,8 +242,12 @@ class ApiTests(unittest.TestCase):
         }
         try:
             self.client.cookies.set(COOKIE, token)
-            with patch("app.security.transaction") as transact:
-                for path in ("/mantenimiento/vista-previa", "/mantenimiento/eliminar"):
+            with patch("app.api.security.transaction") as transact:
+                for path in (
+                    "/mantenimiento/vista-previa",
+                    "/mantenimiento/eliminar",
+                    "/mantenimiento/normalizar",
+                ):
                     self.assertEqual(
                         self.client.post(path, json={"alcance": "todo"}).status_code,
                         403,
@@ -265,7 +273,7 @@ class ApiTests(unittest.TestCase):
                 "motivo": "     ",
             },
         ]
-        with patch("app.maintenance.transaction") as transact:
+        with patch("app.api.maintenance.transaction") as transact:
             for body in cases:
                 response = self.client.post("/mantenimiento/eliminar", json=body)
                 self.assertEqual(response.status_code, 422, response.text)

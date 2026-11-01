@@ -54,7 +54,7 @@ function select(table: string, id?: number) {
         incorporarse después.
       </p>
     </div>
-    <span class="small-tag">30 TABLAS RELACIONADAS</span>
+    <span class="small-tag">{{ definitions.length }} TABLAS RELACIONADAS</span>
   </div>
   <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
   <div v-if="selected" class="model-layout">

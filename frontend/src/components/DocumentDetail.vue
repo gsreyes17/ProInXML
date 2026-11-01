@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { api } from "../services/api";
-import { date, text } from "../services/format";
+import { date, text, xmlSourceUrl } from "../services/format";
 import type { DataRow } from "../types";
 import DetailDialog from "./DetailDialog.vue";
 
@@ -19,6 +19,7 @@ const detail = ref<{
 } | null>(null);
 const error = ref("");
 const loading = ref(false);
+const sourceUrl = computed(() => xmlSourceUrl(detail.value?.documento.URL));
 let controller: AbortController | null = null;
 watch(
   () => [props.documentId, props.ordinal],
@@ -61,31 +62,51 @@ onUnmounted(() => controller?.abort());
         <div
           v-for="key in [
             'EstadoDocumento',
-            'HttpStatus',
+            'HTTPStatus',
             'AnoEje',
             'SecEjec',
+            'CantidadRegistros',
             'RegistrosDetalle',
             'Observaciones',
             'Vigente',
-            'CreadoUtc',
+            'CreadoUTC',
           ]"
           :key="key"
         >
-          <dt>{{ key }}</dt>
+          <dt>{{ key === "CreadoUTC" ? "Recibido" : key }}</dt>
           <dd>
             {{
-              key.endsWith("Utc")
+              key.endsWith("UTC")
                 ? date(detail.documento[key])
                 : text(detail.documento[key])
             }}
           </dd>
         </div>
       </dl>
-      <p class="document-url">{{ detail.documento.Url }}</p>
+      <p
+        v-if="
+          detail.documento.EsValido === true &&
+          detail.documento.CantidadRegistros === 0
+        "
+        class="notice"
+        role="status"
+      >
+        XML válido sin registros: la respuesta guardada no contiene elementos
+        Item.
+      </p>
+      <p class="document-url">{{ detail.documento.URL }}</p>
       <p v-if="detail.documento.ErrorValidacion" class="notice notice-error">
         {{ detail.documento.ErrorValidacion }}
       </p>
       <div class="document-links">
+        <a
+          v-if="sourceUrl"
+          class="row-action"
+          :href="sourceUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Abrir XML de origen</a
+        >
         <RouterLink
           class="row-action"
           :to="{ name: 'observaciones', query: { documento_id: documentId } }"
@@ -114,9 +135,10 @@ onUnmounted(() => controller?.abort());
       </template>
       <h3>Respuesta original</h3>
       <p class="subtle">
-        Vista de texto del contenido recibido{{
+        Contenido guardado al procesar el documento{{
           detail.original.truncado ? " · limitada a los primeros 64 KiB" : ""
-        }}.
+        }}. El enlace de origen abre la respuesta actual del MEF, que puede
+        cambiar.
       </p>
       <pre class="original-preview" tabindex="0">{{
         detail.original.texto

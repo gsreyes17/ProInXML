@@ -6,11 +6,11 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from fastapi.encoders import jsonable_encoder
 
-from app.config import settings
-from app.db import rows, transaction
-from app.explorer import page
-from app.metrics import PHASES
-from app.security import current_user
+from app.infrastructure.config import settings
+from app.infrastructure.db import rows, transaction
+from app.api.explorer import page
+from app.integration.metrics import PHASES
+from app.api.security import current_user
 
 router = APIRouter(
     prefix="/metricas", tags=["Metricas"], dependencies=[Depends(current_user)]
@@ -83,9 +83,9 @@ def summary(
                 "COALESCE(SUM(CONVERT(bigint,RegistrosInsertados)),0) AS FilasInsertadas, "
                 "COALESCE(SUM(CONVERT(bigint,RegistrosReutilizados)),0) AS FilasReutilizadas, "
                 "COALESCE(SUM(CONVERT(bigint,RegistrosNormalizados)),0) AS FilasNormalizadas, "
-                "COALESCE(SUM(BytesRecibidos),0) AS BytesRecibidos,MIN(InicioUtc) AS InicioUtc, "
-                "MAX(COALESCE(FinUtc,SYSUTCDATETIME())) AS FinVentanaUtc, "
-                "DATEDIFF_BIG(millisecond,MIN(InicioUtc),MAX(COALESCE(FinUtc,SYSUTCDATETIME()))) AS VentanaMs "
+                "COALESCE(SUM(BytesRecibidos),0) AS BytesRecibidos,MIN(InicioUTC) AS InicioUTC, "
+                "MAX(COALESCE(FinUTC,SYSUTCDATETIME())) AS FinVentanaUTC, "
+                "DATEDIFF_BIG(millisecond,MIN(InicioUTC),MAX(COALESCE(FinUTC,SYSUTCDATETIME()))) AS VentanaMs "
                 f"FROM analisis.MetricaIntento m WHERE {where}",
                 *params,
             )
@@ -112,14 +112,14 @@ def summary(
                 "SUM(CASE WHEN Estado IN('Error','Interrumpido') THEN 1 ELSE 0 END) AS Fallos, "
                 "SUM(CONVERT(bigint,RegistrosInsertados)) AS FilasInsertadas, "
                 "AVG(CASE WHEN MedicionFinalizada=1 THEN CONVERT(float,TotalMs) END) AS PromedioMs, "
-                "DATEDIFF_BIG(millisecond,MIN(InicioUtc),MAX(COALESCE(FinUtc,SYSUTCDATETIME()))) AS VentanaMs "
+                "DATEDIFF_BIG(millisecond,MIN(InicioUTC),MAX(COALESCE(FinUTC,SYSUTCDATETIME()))) AS VentanaMs "
                 f"FROM analisis.MetricaIntento m WHERE {where} GROUP BY m.Concurrencia ORDER BY m.Concurrencia",
                 *params,
             )
         )
         slow = rows(
             con.execute(
-                "SELECT TOP(5) Id,IntentoId,DocumentoId,LoteId,Concurrencia,Estado,RegistrosLeidos,TotalMs,UrlSolicitada "
+                "SELECT TOP(5) Id,IntentoId,DocumentoId,LoteId,Concurrencia,Estado,RegistrosLeidos,TotalMs,URLSolicitada "
                 f"FROM analisis.MetricaIntento m WHERE {where} AND MedicionFinalizada=1 ORDER BY TotalMs DESC,Id DESC",
                 *params,
             )

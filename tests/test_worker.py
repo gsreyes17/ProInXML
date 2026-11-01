@@ -2,24 +2,24 @@ import unittest
 from unittest.mock import ANY, patch
 
 import httpx
-from app import worker
+from app.integration import worker
 
 
 class WorkerTests(unittest.TestCase):
     def setUp(self):
         self.job = {
             "Id": 1,
-            "Url": "http://s3.mef.gob.pe/example",
+            "URL": "http://s3.mef.gob.pe/example",
             "Intentos": 1,
             "Token": "test",
         }
         self.real_client = httpx.Client
         self.patches = [
-            patch("app.worker.save_response", return_value=5),
-            patch("app.worker.persist_records", return_value=0),
-            patch("app.worker.fail_job"),
-            patch("app.worker.circuit", worker.Circuit()),
-            patch("app.metrics.AttemptMetrics.save"),
+            patch("app.integration.worker.save_response", return_value=5),
+            patch("app.integration.worker.persist_records", return_value=0),
+            patch("app.integration.worker.fail_job"),
+            patch("app.integration.worker.circuit", worker.Circuit()),
+            patch("app.integration.metrics.AttemptMetrics.save"),
         ]
         self.saved, self.persisted, self.failed, _, self.metric_saved = [
             p.start() for p in self.patches
@@ -32,7 +32,7 @@ class WorkerTests(unittest.TestCase):
     def request(self, handler):
         transport = httpx.MockTransport(handler)
         with patch(
-            "app.worker.httpx.Client",
+            "app.integration.worker.httpx.Client",
             side_effect=lambda **kw: self.real_client(transport=transport, **kw),
         ):
             worker.process(self.job)
@@ -77,7 +77,7 @@ class WorkerTests(unittest.TestCase):
         self.assertFalse(circuit.available())
 
     def test_twenty_workers_are_supported(self):
-        from app.config import Settings
+        from app.infrastructure.config import Settings
 
         self.assertEqual(Settings(worker_concurrency=20).worker_concurrency, 20)
         with self.assertRaises(ValueError):

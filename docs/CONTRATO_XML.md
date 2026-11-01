@@ -52,7 +52,7 @@ Reglas adicionales:
 - `MesEje` admite 0 a 12. No se inventa el significado de 0.
 - Los códigos requieren de 1 a 32 caracteres, salvo Unidad_Medida opcional. `036` permanece `036`.
 - Los importes deben ser finitos, tener hasta cuatro decimales y caber en DECIMAL(19,4). No se redondea un valor que excede la escala.
-- `TipoActProy` 2/3 admite normalización. Otro entero representable se conserva en el detalle con `TIPO_ACT_PROY_INVALIDO`, severidad Error; el documento no se publica.
+- `TipoActProy` se conserva como entero en `staging.Gasto` y como `modelo.TipoActProy.Codigo`; `modelo.Gasto.TipoActProyId` referencia ese código. No se le asigna una descripción ni se limita a valores concretos hasta validar su significado con una fuente oficial.
 - Unidad vacía o espacios genera `UNIDAD_VACIA`; ausente, `UNIDAD_AUSENTE`; `xsi:nil=true/1`, `UNIDAD_NIL`. Las tres producen NULL y Advertencia, sin bloquear.
 - En los 71 vacíos reales, `IdMeta` e `IdFinalidad` fueron ambos `99999`. Es un hallazgo de la muestra, no una dependencia impuesta a toda la fuente.
 

@@ -5,8 +5,6 @@ __pycache__/
 .runtime/
 .coverage
 .ruff_cache/
-*.egg-info/
-.tools/
 node_modules/
 frontend/dist/
 *.tsbuildinfo

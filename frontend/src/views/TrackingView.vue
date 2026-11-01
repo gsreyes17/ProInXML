@@ -21,6 +21,7 @@ const router = useRouter();
 const auth = useAuthStore();
 const selected = computed(() => Number(route.query.lote) || null);
 const batches = ref<DataRow[]>([]);
+const activeBatch = ref<DataRow | null>(null);
 const summary = ref<Summary | null>(null);
 const jobs = ref<DataRow[]>([]);
 const filter = ref("");
@@ -40,12 +41,28 @@ const labels: Record<string, string> = {
   Cancelado: "Cancelado",
 };
 let generation = 0;
+let previousCompleted = new Map<number, number>();
+let activeSeenAt = 0;
 const poll = usePolling(async (signal) => {
   const current = generation;
   const batchId = selected.value;
   const pending = [api<DataRow[]>("/lotes?limite=8", { signal })];
   const history = await pending[0]!;
   if (current !== generation) return;
+  const advanced = history.find(
+    (batch) =>
+      Number(batch.Completados) >
+      (previousCompleted.get(Number(batch.Id)) ?? Number(batch.Completados)),
+  );
+  previousCompleted = new Map(
+    history.map((batch) => [Number(batch.Id), Number(batch.Completados)]),
+  );
+  if (advanced) {
+    activeBatch.value = advanced;
+    activeSeenAt = Date.now();
+  } else if (Date.now() - activeSeenAt > 30000) {
+    activeBatch.value = null;
+  }
   batches.value = history;
   if (!batchId) {
     if (history.length)
@@ -215,6 +232,24 @@ function closeRecords() {
         }}</span>
       </div>
     </div>
+    <div
+      v-if="summary && remaining && !(counts.EnCurso || 0)"
+      class="notice queue-notice"
+      role="status"
+    >
+      <span v-if="activeBatch && Number(activeBatch.Id) !== selected">
+        Este lote espera su turno o un reintento. La cola está procesando el lote
+        #{{ activeBatch.Id }}.
+        <RouterLink
+          class="text-button"
+          :to="{ name: 'seguimiento', query: { lote: Number(activeBatch.Id) } }"
+        >Ver lote activo</RouterLink>
+      </span>
+      <span v-else>
+        Este lote conserva trabajos pendientes. Si no avanzan, comprueba que el
+        worker siga activo con iniciar.cmd.
+      </span>
+    </div>
     <p
       v-if="poll.error.value || error"
       class="notice notice-error"
@@ -227,7 +262,7 @@ function closeRecords() {
         <span class="stat-label">Enlaces en la carga</span
         ><strong id="stat-total" class="stat-number">{{ number(total) }}</strong
         ><span class="stat-caption"
-          >#{{ selected }} · {{ date(summary.lote.CreadoUtc) }}</span
+          >#{{ selected }} · {{ date(summary.lote.CreadoUTC) }}</span
         >
       </div>
       <div class="stat">
@@ -316,14 +351,14 @@ function closeRecords() {
                     >Ejecutora {{ job.SecEjec }} · {{ job.NivelGobierno }}</span
                   >
                 </div>
-                <span class="source-url" :title="String(job.Url)">{{
-                  job.Url
+                <span class="source-url" :title="String(job.URL)">{{
+                  job.URL
                 }}</span>
                 <details v-if="job.UltimoError" class="error-details">
                   <summary>Ver último error</summary>
                   <p>{{ job.UltimoError }}</p>
                   <p v-if="job.Estado === 'Pendiente'">
-                    Próximo intento: {{ date(job.ProximoIntentoUtc) }}
+                    Próximo intento: {{ date(job.ProximoIntentoUTC) }}
                   </p>
                 </details>
               </td>
@@ -345,8 +380,8 @@ function closeRecords() {
               <td>
                 {{ job.Intentos }} / {{ job.MaxIntentos
                 }}<small class="cell-caption">{{
-                  job.HttpStatus
-                    ? `HTTP ${job.HttpStatus}`
+                  job.HTTPStatus
+                    ? `HTTP ${job.HTTPStatus}`
                     : "Sin respuesta HTTP"
                 }}</small>
               </td>

@@ -4,7 +4,7 @@ import os
 from uuid import uuid4
 
 import pyodbc
-from app.config import settings  # noqa: F401 - Carga .env al ejecutar scripts SQL.
+from app.infrastructure.config import settings  # noqa: F401 - Carga .env al ejecutar scripts SQL.
 
 identity = ContextVar("audit_identity", default=None)
 # Cada conexion se configura con su contexto; no reutilizar identidad de otra sesion.

@@ -132,7 +132,7 @@ async function save() {
       'NombreCompleto',
       'Rol',
       'Activo',
-      'CreadoUtc',
+      'CreadoUTC',
     ]"
     :descending="false"
     ><template #actions="{ row }"

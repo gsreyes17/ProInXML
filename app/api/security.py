@@ -10,8 +10,8 @@ from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from app.config import settings
-from app.db import identity, insert_id, rows, transaction
+from app.infrastructure.config import settings
+from app.infrastructure.db import identity, insert_id, rows, transaction
 
 router = APIRouter(tags=["Seguridad"])
 hasher = PasswordHasher()
@@ -201,7 +201,7 @@ def users(despues_de: int = 0, limite: int = 25, user=Depends(require_roles(ADMI
     with transaction() as con:
         result = rows(
             con.execute(
-                "SELECT TOP(?) u.Id,u.NombreUsuario,u.NombreCompleto,r.Nombre AS Rol,u.Activo,u.CreadoUtc "
+                "SELECT TOP(?) u.Id,u.NombreUsuario,u.NombreCompleto,r.Nombre AS Rol,u.Activo,u.CreadoUTC "
                 "FROM seguridad.Usuario u JOIN seguridad.Rol r ON r.Id=u.RolId WHERE u.Id>? ORDER BY u.Id",
                 limite + 1,
                 despues_de,

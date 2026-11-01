@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { RouterLink } from "vue-router";
 import PagedExplorer from "../components/PagedExplorer.vue";
 import DetailDialog from "../components/DetailDialog.vue";
+import DocumentDetail from "../components/DocumentDetail.vue";
 import { api } from "../services/api";
-import { date, text } from "../services/format";
+import { date, text, xmlSourceUrl } from "../services/format";
 import type { DataRow } from "../types";
 
 const tab = ref("cambios");
@@ -28,24 +28,27 @@ const columns = computed(() =>
   tab.value === "cambios"
     ? [
         "Id",
-        "FechaUtc",
+        "FechaUTC",
         "Tabla",
         "RegistroId",
         "Operacion",
         "Actor",
         "Rol",
-        "LoginSql",
+        "LoginSQL",
       ]
     : tab.value === "cargas"
       ? [
           "Id",
           "DocumentoId",
           "LoteId",
+          "Resultado",
+          "HTTPStatus",
+          "CantidadRegistros",
           "UsuarioId",
           "Rol",
           "FilasInsertadas",
           "FilasReutilizadas",
-          "FechaUtc",
+          "FechaUTC",
         ]
       : [
           "Id",
@@ -54,7 +57,7 @@ const columns = computed(() =>
           "Evento",
           "Exitoso",
           "Ip",
-          "FechaUtc",
+          "FechaUTC",
         ],
 );
 const filters = computed(() =>
@@ -90,7 +93,19 @@ const filters = computed(() =>
         { key: "hasta", label: "Hasta", type: "date" },
       ]
     : tab.value === "cargas"
-      ? [{ key: "documento_id", label: "Documento", type: "number" }]
+      ? [
+          { key: "documento_id", label: "Documento", type: "number" },
+          {
+            key: "resultado",
+            label: "Resultado",
+            options: [
+              { value: "sin_datos", label: "Sin datos" },
+              { value: "con_datos", label: "Con datos" },
+              { value: "rechazado", label: "Rechazado" },
+              { value: "eliminado", label: "Documento eliminado" },
+            ],
+          },
+        ]
       : [],
 );
 interface Change {
@@ -99,13 +114,14 @@ interface Change {
   RegistroId: number;
   Actor: string;
   Rol: string;
-  LoginSql: string;
-  FechaUtc: string;
+  LoginSQL: string;
+  FechaUTC: string;
   Correlacion: string | null;
   Antes: DataRow | null;
   Despues: DataRow | null;
 }
 const detail = ref<Change | null>(null);
+const inspectedDocument = ref<number | null>(null);
 const opened = ref(false);
 const error = ref("");
 let controller: AbortController | null = null;
@@ -143,6 +159,10 @@ function close() {
 onUnmounted(() => controller?.abort());
 </script>
 <template>
+  <DocumentDetail
+    :document-id="inspectedDocument"
+    @close="inspectedDocument = null"
+  />
   <div class="tabs" aria-label="Tipo de auditoría">
     <button
       v-for="(label, key) in {
@@ -165,19 +185,46 @@ onUnmounted(() => controller?.abort());
     prefix="audit"
     :columns="columns"
     :filters="filters"
+    :labels="{ HTTPStatus: 'HTTP', CantidadRegistros: 'Registros XML' }"
     ><template #cell="{ row, column }"
-      ><RouterLink
-        v-if="column === 'DocumentoId'"
+      ><button
+        v-if="column === 'DocumentoId' && row.DocumentoDisponible"
         class="row-action"
-        :to="{ name: 'datos', query: { documento_id: Number(row[column]) } }"
-        >{{ row[column] }} ↗</RouterLink
+        :aria-label="`Inspeccionar documento ${row[column]}`"
+        @click="inspectedDocument = Number(row[column])"
+      >
+        {{ row[column] }}</button
+      ><span
+        v-else-if="column === 'Resultado'"
+        :class="[
+          'status-badge',
+          row.Resultado === 'Rechazado' ? 'status-FALLIDO' : 'status-PENDIENTE',
+        ]"
+        >{{ row[column] }}</span
       ><template v-else>{{
-        column.endsWith("Utc") ? date(row[column]) : text(row[column])
+        column.endsWith("UTC") ? date(row[column]) : text(row[column])
       }}</template></template
-    ><template v-if="tab === 'cambios'" #actions="{ row }"
-      ><button class="row-action" @click="open(row)">
+    ><template v-if="tab !== 'accesos'" #actions="{ row }"
+      ><button v-if="tab === 'cambios'" class="row-action" @click="open(row)">
         Ver cambios ↗
-      </button></template
+      </button>
+      <template v-else-if="row.DocumentoDisponible">
+        <button
+          class="row-action"
+          @click="inspectedDocument = Number(row.DocumentoId)"
+        >
+          Ver respuesta guardada
+        </button>
+        <a
+          v-if="xmlSourceUrl(row.URL)"
+          class="row-action"
+          :href="xmlSourceUrl(row.URL)"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Abrir XML de origen</a
+        >
+      </template>
+      <span v-else class="subtle">Documento eliminado</span></template
     ></PagedExplorer
   >
   <DetailDialog
@@ -189,10 +236,10 @@ onUnmounted(() => controller?.abort());
     <template v-if="detail"
       ><p class="detail-meta">
         {{ detail.Tabla }} · Registro #{{ detail.RegistroId }} ·
-        {{ detail.Actor }} · {{ detail.Rol }} · {{ date(detail.FechaUtc) }}
+        {{ detail.Actor }} · {{ detail.Rol }} · {{ date(detail.FechaUTC) }}
       </p>
       <p class="detail-meta">
-        Usuario SQL: {{ detail.LoginSql }} · Correlación:
+        Usuario SQL: {{ detail.LoginSQL }} · Correlación:
         {{ detail.Correlacion }}
       </p>
       <div class="table-scroll">

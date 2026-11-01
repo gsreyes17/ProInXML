@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1050" viewBox="0 0 1600 1050" role="img" aria-labelledby="title desc">
+  <title id="title">Arquitectura de integración de ProInXML</title>
+  <desc id="desc">El usuario entrega URLs a Vue. FastAPI registra lotes y trabajos en SQL Server. Un worker Python consume la cola, descarga XML del MEF, conserva el original y procesa staging y el modelo normalizado. La interfaz consulta estados, datos, auditoría y métricas.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#327566"/></marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#3274b9"/></marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#c87629"/></marker>
+    <style>
+      text { font-family: 'Segoe UI', Arial, sans-serif; fill:#18352f; }
+      .heading { font-size:34px; font-weight:750; }
+      .subtitle { font-size:17px; fill:#557168; }
+      .step { font-size:14px; font-weight:700; fill:#377568; letter-spacing:1.4px; }
+      .cardTitle { font-size:22px; font-weight:750; }
+      .cardBody { font-size:16px; fill:#4b665e; }
+      .dbTitle { font-size:21px; font-weight:750; }
+      .dbBody { font-size:15px; fill:#4b665e; }
+      .section { font-size:17px; font-weight:700; fill:#285e51; }
+      .small { font-size:14px; fill:#547066; }
+      .arrowLabel { font-size:15px; font-weight:650; fill:#245f51; }
+      .pill { font-size:14px; font-weight:700; fill:#276153; }
+      .card { fill:#fff; stroke:#c7dcd2; stroke-width:2; }
+      .soft { fill:#f2f8f5; stroke:#c7dcd2; stroke-width:2; }
+      .line { fill:none; stroke:#327566; stroke-width:3; marker-end:url(#arrow); }
+      .lineBlue { fill:none; stroke:#3274b9; stroke-width:3; marker-end:url(#arrowBlue); }
+      .lineOrange { fill:none; stroke:#c87629; stroke-width:3; marker-end:url(#arrowOrange); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1050" fill="#f8fbf9"/>
+  <rect x="0" y="0" width="1600" height="13" fill="#2c7462"/>
+  <text x="70" y="65" class="heading">ProInXML · Arquitectura de integración</text>
+  <text x="70" y="94" class="subtitle">Del enlace XML a una consulta auditada y normalizada</text>
+  <rect x="1290" y="39" width="238" height="40" rx="20" fill="#e2f1e9"/>
+  <text x="1409" y="65" class="pill" text-anchor="middle">Vue · FastAPI · SQL Server</text>
+
+  <!-- Entrada e interfaz -->
+  <text x="70" y="145" class="step">1 · ENTRADA</text>
+  <rect x="70" y="165" width="250" height="155" rx="16" class="card"/>
+  <rect x="88" y="184" width="50" height="50" rx="12" fill="#e2f1e9"/>
+  <text x="113" y="217" font-size="27" font-weight="700" text-anchor="middle">U</text>
+  <text x="88" y="265" class="cardTitle">Usuario</text>
+  <text x="88" y="292" class="cardBody">Pega URLs o carga Excel</text>
+
+  <text x="393" y="145" class="step">2 · INTERFAZ</text>
+  <rect x="393" y="165" width="260" height="155" rx="16" class="card"/>
+  <rect x="411" y="184" width="50" height="50" rx="12" fill="#e8f1fb"/>
+  <text x="436" y="217" font-size="25" font-weight="700" fill="#3274b9" text-anchor="middle">V</text>
+  <text x="411" y="265" class="cardTitle">Vue 3</text>
+  <text x="411" y="292" class="cardBody">Carga, seguimiento y consulta</text>
+
+  <text x="727" y="145" class="step">3 · API</text>
+  <rect x="727" y="165" width="280" height="155" rx="16" class="card"/>
+  <rect x="745" y="184" width="50" height="50" rx="12" fill="#e2f1e9"/>
+  <text x="770" y="217" font-size="24" font-weight="700" text-anchor="middle">A</text>
+  <text x="745" y="265" class="cardTitle">FastAPI</text>
+  <text x="745" y="292" class="cardBody">Valida, autentica y registra</text>
+
+  <text x="1080" y="145" class="step">4 · COLA DURABLE</text>
+  <rect x="1080" y="165" width="450" height="155" rx="16" class="soft"/>
+  <text x="1101" y="211" class="cardTitle">SQL Server · integracion</text>
+  <text x="1101" y="243" class="cardBody">Lote → Consulta → Trabajo → Intento</text>
+  <text x="1101" y="273" class="cardBody">Pendiente · EnCurso · Completado / Fallido</text>
+  <text x="1101" y="301" class="small">La cola sobrevive al reinicio del sistema</text>
+
+  <path d="M 320 242 H 380" class="line"/>
+  <path d="M 653 242 H 714" class="line"/>
+  <path d="M 1007 242 H 1067" class="line"/>
+  <text x="343" y="224" class="arrowLabel">URLs</text>
+  <text x="671" y="224" class="arrowLabel">HTTP</text>
+
+  <!-- Procesamiento -->
+  <text x="70" y="380" class="step">5 · PROCESAMIENTO EN SEGUNDO PLANO</text>
+  <rect x="70" y="399" width="435" height="189" rx="16" class="card"/>
+  <rect x="89" y="418" width="50" height="50" rx="12" fill="#e2f1e9"/>
+  <text x="114" y="451" font-size="24" font-weight="700" text-anchor="middle">W</text>
+  <text x="155" y="450" class="cardTitle">Worker Python</text>
+  <text x="89" y="499" class="cardBody">Toma trabajos con lease y token</text>
+  <text x="89" y="528" class="cardBody">8 hilos por defecto; cola compartida</text>
+  <text x="89" y="557" class="cardBody">Reintenta fallos transitorios</text>
+
+  <rect x="572" y="399" width="435" height="189" rx="16" class="card"/>
+  <rect x="591" y="418" width="50" height="50" rx="12" fill="#fff0df"/>
+  <text x="616" y="451" font-size="24" font-weight="700" fill="#bd702a" text-anchor="middle">X</text>
+  <text x="657" y="450" class="cardTitle">Servicio XML del MEF</text>
+  <text x="591" y="499" class="cardBody">Origen externo: entrega el XML</text>
+  <text x="591" y="528" class="cardBody">Puede tardar o devolver HTTP 500</text>
+  <text x="591" y="557" class="cardBody">Una respuesta válida puede estar vacía</text>
+
+  <rect x="1080" y="399" width="450" height="189" rx="16" class="soft"/>
+  <text x="1101" y="442" class="cardTitle">Procesar documento</text>
+  <text x="1101" y="477" class="cardBody">1. Conservar original comprimido + SHA-256</text>
+  <text x="1101" y="508" class="cardBody">2. Validar contrato y leer Items</text>
+  <text x="1101" y="539" class="cardBody">3. Persistir, normalizar y publicar</text>
+  <text x="1101" y="566" class="small">Publicación en una transacción por documento</text>
+
+  <path d="M 1305 320 V 358 H 288 V 386" class="line"/>
+  <text x="560" y="348" class="arrowLabel">El worker reclama el siguiente trabajo disponible</text>
+  <path d="M 505 493 H 559" class="lineOrange"/>
+  <path d="M 1007 493 H 1067" class="lineOrange"/>
+  <text x="515" y="475" class="arrowLabel">GET</text>
+  <text x="1019" y="475" class="arrowLabel">XML</text>
+  <path d="M 570 575 C 570 615 265 616 265 588" class="lineOrange" stroke-dasharray="8 7"/>
+  <text x="358" y="608" font-size="14" fill="#a96425">Error temporal → nuevo intento programado</text>
+
+  <!-- Persistencia -->
+  <text x="70" y="661" class="step">6 · ALMACENAMIENTO Y CONSULTAS EN SQL SERVER</text>
+  <rect x="70" y="681" width="1460" height="241" rx="20" fill="#ebf5ef" stroke="#a8cfb8" stroke-width="2"/>
+
+  <rect x="91" y="704" width="267" height="144" rx="13" class="card"/>
+  <text x="111" y="739" class="dbTitle">integracion</text>
+  <text x="111" y="769" class="dbBody">Documento original gzip</text>
+  <text x="111" y="796" class="dbBody">Huella SHA-256 y versión</text>
+  <text x="111" y="823" class="dbBody">Consulta y calidad del dato</text>
+
+  <rect x="377" y="704" width="267" height="144" rx="13" class="card"/>
+  <text x="397" y="739" class="dbTitle">staging</text>
+  <text x="397" y="769" class="dbBody">39 campos del XML</text>
+  <text x="397" y="796" class="dbBody">Una fila por Item</text>
+  <text x="397" y="823" class="dbBody">Vistas del XML original</text>
+
+  <rect x="663" y="704" width="267" height="144" rx="13" class="card"/>
+  <text x="683" y="739" class="dbTitle">modelo</text>
+  <text x="683" y="769" class="dbBody">Entidades relacionadas</text>
+  <text x="683" y="796" class="dbBody">Gasto normalizado</text>
+  <text x="683" y="823" class="dbBody">Vistas reconstruidas</text>
+
+  <rect x="949" y="704" width="267" height="144" rx="13" class="card"/>
+  <text x="969" y="739" class="dbTitle">auditoria</text>
+  <text x="969" y="769" class="dbBody">Cambios y cargas</text>
+  <text x="969" y="796" class="dbBody">Trazabilidad de usuarios</text>
+  <text x="969" y="823" class="dbBody">Bitácora protegida</text>
+
+  <rect x="1235" y="704" width="274" height="144" rx="13" class="card"/>
+  <text x="1255" y="739" class="dbTitle">analisis + seguridad</text>
+  <text x="1255" y="769" class="dbBody">Tiempos y rendimiento</text>
+  <text x="1255" y="796" class="dbBody">Usuarios, roles y acceso</text>
+  <text x="1255" y="823" class="dbBody">HTTP y tiempo por intento</text>
+
+  <path d="M 1165 588 V 648 H 224 V 691" class="lineBlue"/>
+  <path d="M 358 776 H 365" class="lineBlue"/>
+  <path d="M 644 776 H 651" class="lineBlue"/>
+  <path d="M 1304 588 V 650 H 1082 V 691" class="lineBlue"/>
+  <path d="M 1405 588 V 633 H 1373 V 691" class="lineBlue"/>
+  <text x="483" y="640" font-size="15" font-weight="650" fill="#3274b9">original → detalle → modelo</text>
+
+  <!-- Lectura y mensaje de defensa -->
+  <rect x="70" y="957" width="1460" height="68" rx="15" fill="#dcefe4"/>
+  <text x="94" y="984" class="section">Lectura: Vue consulta FastAPI para ver progreso, datos XML, modelo, auditoría y métricas.</text>
+  <text x="94" y="1007" class="small">Seguimiento cada 3 segundos · Si se reinicia la aplicación, los trabajos pendientes permanecen en SQL y el worker los retoma.</text>
+</svg>

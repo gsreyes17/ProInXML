@@ -5,14 +5,14 @@ from decimal import Decimal
 import logging
 from time import perf_counter_ns
 
-from app.config import settings
-from app.db import transaction
+from app.infrastructure.config import settings
+from app.infrastructure.db import transaction
 
 log = logging.getLogger("proinxml.metricas")
 PHASES = (
     ("DescargaMs", "Descarga", "#2563eb"),
     ("OriginalMs", "Guardar original", "#0891b2"),
-    ("EsperaSqlMs", "Espera de bloqueos SQL", "#d97706"),
+    ("EsperaSQLMs", "Espera de bloqueos SQL", "#d97706"),
     ("ValidacionMs", "Lectura y validación", "#7c3aed"),
     ("InsercionMs", "Inserción del detalle", "#0f766e"),
     ("NormalizacionMs", "Normalización", "#be185d"),
@@ -75,13 +75,13 @@ class AttemptMetrics:
             ) as con:
                 con.execute(
                     "IF NOT EXISTS(SELECT 1 FROM analisis.MetricaIntento WHERE IntentoId=?) "
-                    "INSERT analisis.MetricaIntento(IntentoId,TrabajoId,LoteId,NombreLote,UrlSolicitada,AnoEje,SecEjec,Concurrencia) "
+                    "INSERT analisis.MetricaIntento(IntentoId,TrabajoId,LoteId,NombreLote,URLSolicitada,AnoEje,SecEjec,Concurrencia) "
                     "SELECT ?,?,?,Nombre,?,?,?,? FROM integracion.Lote WHERE Id=?",
                     self.job["IntentoId"],
                     self.job["IntentoId"],
                     self.job["Id"],
                     self.job["LoteId"],
-                    self.job["Url"],
+                    self.job["URL"],
                     self.job["AnoEje"],
                     self.job["SecEjec"],
                     self.concurrency,
@@ -89,9 +89,9 @@ class AttemptMetrics:
                 )
                 assignments = ",".join(f"[{field}]=?" for field in TIME_FIELDS)
                 con.execute(
-                    "UPDATE analisis.MetricaIntento SET DocumentoId=?,HttpStatus=?,BytesRecibidos=?,Estado=?,Etapa=?,Error=?, "
+                    "UPDATE analisis.MetricaIntento SET DocumentoId=?,HTTPStatus=?,BytesRecibidos=?,Estado=?,Etapa=?,Error=?, "
                     "RegistrosLeidos=?,RegistrosInsertados=?,RegistrosReutilizados=?,RegistrosNormalizados=?, "
-                    f"{assignments},MedicionFinalizada=?,FinUtc=CASE WHEN ?=1 THEN SYSUTCDATETIME() ELSE NULL END "
+                    f"{assignments},MedicionFinalizada=?,FinUTC=CASE WHEN ?=1 THEN SYSUTCDATETIME() ELSE NULL END "
                     "WHERE IntentoId=? AND Estado='EnCurso'",
                     self.document_id,
                     self.status,
@@ -119,8 +119,8 @@ class AttemptMetrics:
 def close_interrupted(con):
     con.execute(
         "IF OBJECT_ID(N'analisis.MetricaIntento',N'U') IS NOT NULL "
-        "UPDATE m SET Estado='Interrumpido',Etapa=N'Interrumpido',FinUtc=a.FinUtc,Error=a.Error,"
-        "TotalMs=CONVERT(decimal(19,3),DATEDIFF_BIG(millisecond,m.InicioUtc,a.FinUtc)) "
+        "UPDATE m SET Estado='Interrumpido',Etapa=N'Interrumpido',FinUTC=a.FinUTC,Error=a.Error,"
+        "TotalMs=CONVERT(decimal(19,3),DATEDIFF_BIG(millisecond,m.InicioUTC,a.FinUTC)) "
         "FROM analisis.MetricaIntento m JOIN integracion.Intento a ON a.Id=m.IntentoId "
         "WHERE m.Estado='EnCurso' AND a.Estado='Interrumpido'"
     )

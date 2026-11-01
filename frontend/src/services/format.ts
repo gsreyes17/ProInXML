@@ -5,6 +5,21 @@ export function text(value: unknown): string {
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
 }
+export function xmlSourceUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return;
+  try {
+    const url = new URL(value);
+    if (
+      ["http:", "https:"].includes(url.protocol) &&
+      url.host === "s3.mef.gob.pe" &&
+      !url.username &&
+      !url.password
+    )
+      return url.href;
+  } catch {
+    return;
+  }
+}
 export const number = (value: number) =>
   new Intl.NumberFormat("es-PE").format(value);
 export function date(value: Cell | undefined) {

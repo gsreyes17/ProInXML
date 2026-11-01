@@ -6,7 +6,7 @@ from xml.etree.ElementTree import ParseError
 
 from defusedxml.common import DefusedXmlException
 
-from app.xml_reader import canonical_source, content_hash, iter_records
+from app.domain.xml_reader import canonical_source, content_hash, iter_records
 
 SAMPLE = Path(__file__).parent / "fixtures" / "mef_partial_fixture.xml"
 URL = (
@@ -118,7 +118,7 @@ class XmlReaderTests(unittest.TestCase):
                 self.assertEqual(obs[0]["codigo"], code)
                 self.assertEqual(obs[0]["severidad"], "Advertencia")
 
-    def test_invalid_type_is_an_error_observation(self):
+    def test_unknown_type_is_preserved_without_interpretation(self):
         data = self.data.replace(
             b"<TipoActProy>3</TipoActProy>", b"<TipoActProy>4</TipoActProy>", 1
         )
@@ -127,13 +127,10 @@ class XmlReaderTests(unittest.TestCase):
                 b"<TipoActProy>2</TipoActProy>", b"<TipoActProy>4</TipoActProy>", 1
             )
         obs = []
-        with self.assertRaisesRegex(ValueError, "TipoActProy"):
-            list(iter_records(data, self.source, obs))
-        self.assertEqual(obs[0]["severidad"], "Error")
-        self.assertEqual(
-            len(list(iter_records(data, self.source, [], accept_quality_errors=True))),
-            7,
-        )
+        records = list(iter_records(data, self.source, obs))
+        self.assertEqual(len(records), 7)
+        self.assertEqual(records[0]["TipoActProy"], 4)
+        self.assertFalse(any(item["campo"] == "TipoActProy" for item in obs))
 
     def test_real_unit_preserves_leading_zero(self):
         data = re.sub(

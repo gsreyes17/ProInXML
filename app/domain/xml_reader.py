@@ -129,8 +129,6 @@ def iter_records(
     data: bytes,
     source: dict,
     observations: list | None = None,
-    *,
-    accept_quality_errors: bool = False,
 ):
     """No entrega un resultado exitoso hasta consumir y validar TODO el documento.
 
@@ -187,19 +185,6 @@ def iter_records(
                     raise ValueError(f"Entero invalido: {name}") from exc
             if not 0 <= row["MesEje"] <= 12:
                 raise ValueError("MesEje fuera del dominio admitido.")
-            if row["TipoActProy"] not in (2, 3):
-                if observations is not None:
-                    observations.append(
-                        {
-                            "ordinal": ordinal,
-                            "campo": "TipoActProy",
-                            "codigo": "TIPO_ACT_PROY_INVALIDO",
-                            "severidad": "Error",
-                            "detalle": "Se esperaba 2 (Proyecto) o 3 (Actividad).",
-                        }
-                    )
-                if not accept_quality_errors:
-                    raise ValueError("TipoActProy fuera del dominio admitido.")
             for name in CODE_FIELDS:
                 value = values.get(name)
                 if name == "Unidad_Medida" and (unit_nil or not value):
