@@ -12,6 +12,10 @@ const paths: Record<string, string> = {
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M13 3a4 4 0 0 1 0 8M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   maintenance: "m14 5 5 5M3 21l5-1 13-13-5-5L3 15v6Z",
+  power: "M12 2v10m6.36-6.36a9 9 0 1 1-12.72 0",
+  processing: "M4 4h16v6H4V4Zm0 10h16v6H4v-6Zm4-7h.01M8 17h.01",
+  queries: "M11 3a8 8 0 1 0 0 16a8 8 0 0 0 0-16Zm6 14 4 4",
+  admin: "M12 2 20 6v6c0 5-8 10-8 10S4 17 4 12V6l8-4Zm-3 10 2 2 4-4",
 };
 </script>
 <template>

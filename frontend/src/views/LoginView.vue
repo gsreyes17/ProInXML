@@ -11,7 +11,9 @@ const submitting = ref(false);
 const error = ref(
   route.query.conexion
     ? "No se pudo comprobar la sesión. Revisa la conexión a SQL Server e inténtalo de nuevo."
-    : "",
+    : route.query.expirada
+      ? "La sesión terminó después de una hora. Inicia sesión de nuevo."
+      : "",
 );
 async function login() {
   submitting.value = true;
@@ -39,7 +41,7 @@ async function login() {
   <section class="login-page">
     <div class="card login-card">
       <div class="login-brand">
-        <span class="brand-icon" aria-hidden="true">&lt;/&gt;</span> ProInXML
+        <span class="brand-icon" aria-hidden="true">&lt;&gt;</span> ProInXML
         <span class="login-version">1.0</span>
       </div>
       <div class="eyebrow">TU ESPACIO DE INTEGRACIÓN</div>

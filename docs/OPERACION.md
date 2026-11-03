@@ -13,7 +13,7 @@ El instalador respeta `MSSQL_DATABASE`; también admite `--base-datos Nombre`. L
 | `MAX_XML_BYTES` | 32 MiB por respuesta |
 | `MEF_CIRCUIT_FAILURES` | 5 fallos transitorios consecutivos |
 | `MEF_CIRCUIT_PAUSE_SECONDS` | 30 segundos de pausa automática |
-| `SESSION_SECONDS` | 28.800 segundos |
+| `SESSION_SECONDS` | 3.600 segundos (una hora) |
 | `COOKIE_SECURE` | `no` para HTTP local, `yes` al servir HTTPS |
 
 Reiniciar API y worker para aplicar cambios de entorno. La descarga mantiene conexión de 10 s, lectura de 45 s y presupuesto total de 180 s comprobado entre bloques. El lease es de diez minutos y el bloqueo de normalización espera hasta 60 s. Aumentar ese último tiempo no aumenta por sí solo la capacidad SQL.

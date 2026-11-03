@@ -95,6 +95,7 @@ Las pruebas SQL están desactivadas por defecto. Su preparación y ejecución ai
 ## Documentación
 
 - [Flujos y comportamiento del sistema](docs/FLUJOS_SISTEMA.md) y [presentación PowerPoint](docs/presentacion/ProInXML_flujos_1.0.pptx)
+- [Guía de pantallas y acciones](docs/GUIA_PANTALLAS.md)
 - [Arquitectura y base de datos](docs/ARQUITECTURA.md)
 - [Diagrama visual de la arquitectura](docs/DIAGRAMA_ARQUITECTURA.md)
 - [Contrato de los 39 campos](docs/CONTRATO_XML.md) y [modelo relacional](docs/MODELO_3FN.md)

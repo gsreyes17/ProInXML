@@ -68,6 +68,9 @@ async def current_user(request: Request):
         raise HTTPException(401, "La cuenta ya no tiene acceso.")
     request.state.session_key = key
     request.state.csrf = session["csrf"]
+    request.state.expires_in_ms = max(
+        0, int((session["expires"] - time.monotonic()) * 1000)
+    )
     context = identity.set(user)
     try:
         yield user
@@ -159,13 +162,22 @@ def login(body: Login, request: Request, response: Response):
         path="/",
     )
     response.headers["Cache-Control"] = "no-store"
-    return {"usuario": user, "csrf": csrf, "token": token}
+    return {
+        "usuario": user,
+        "csrf": csrf,
+        "token": token,
+        "expires_in_ms": settings.session_seconds * 1000,
+    }
 
 
 @router.get("/auth/me")
 def me(request: Request, response: Response, user=Depends(current_user)):
     response.headers["Cache-Control"] = "no-store"
-    return {"usuario": user, "csrf": request.state.csrf}
+    return {
+        "usuario": user,
+        "csrf": request.state.csrf,
+        "expires_in_ms": request.state.expires_in_ms,
+    }
 
 
 @router.post("/auth/logout")

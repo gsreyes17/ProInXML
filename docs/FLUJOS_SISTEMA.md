@@ -58,7 +58,7 @@ Una consulta puede tener varias versiones de documento y varios intentos. Un int
 2. Se registra el evento de acceso, exitoso o fallido. Existe limitación de intentos de acceso por IP y nombre de usuario.
 3. La API entrega una sesión; desde el navegador se utiliza una cookie HttpOnly y protección CSRF para las modificaciones.
 4. Cada petición protegida vuelve a comprobar identidad y rol. Ocultar una opción del menú no sustituye esta comprobación.
-5. Cerrar sesión invalida la sesión y devuelve a la pantalla de acceso. La sesión predeterminada dura ocho horas; reiniciar la API requiere ingresar de nuevo porque las sesiones están en memoria.
+5. Cerrar sesión invalida la sesión y devuelve a la pantalla de acceso. La sesión predeterminada dura una hora y la interfaz muestra el tiempo restante; reiniciar la API requiere ingresar de nuevo porque las sesiones están en memoria.
 
 | Acción | Consulta | Operador | Administrador |
 | --- | :---: | :---: | :---: |

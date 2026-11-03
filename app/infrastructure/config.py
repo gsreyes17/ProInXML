@@ -17,7 +17,7 @@ class Settings:
     max_xml_bytes: int = int(os.getenv("MAX_XML_BYTES", "33554432"))
     circuit_failures: int = int(os.getenv("MEF_CIRCUIT_FAILURES", "5"))
     circuit_pause_seconds: int = int(os.getenv("MEF_CIRCUIT_PAUSE_SECONDS", "30"))
-    session_seconds: int = int(os.getenv("SESSION_SECONDS", "28800"))
+    session_seconds: int = int(os.getenv("SESSION_SECONDS", "3600"))
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "no").lower() == "yes"
 
     def __post_init__(self):
